@@ -52,3 +52,16 @@ function renderProfile(){$("profileName").textContent=profile.name;$("profilePos
 $("editProfile").onclick=()=>{openModal("Edit Staff Profile",`<form id="profileForm" class="form-grid"><label>Full Name<input name="name" value="${esc(profile.name)}" required></label><label>Staff ID<input name="id" value="${esc(profile.id)}" readonly></label><label>Position<input name="position" value="${esc(profile.position)}" required></label><label>Department<input name="department" value="${esc(profile.department)}" required></label><div class="submit-row"><button class="primary" type="submit">Save Profile</button></div></form>`);$("profileForm").onsubmit=e=>{e.preventDefault();profile={...profile,...Object.fromEntries(new FormData(e.target))};save();renderProfile();renderHome();closeModal()}}
 $("printIdCard").onclick=()=>window.print();
 function openModal(title,html){$("modalTitle").textContent=title;$("modalBody").innerHTML=html;$("modal").classList.remove("hidden")};function closeModal(){$("modal").classList.add("hidden")};$("closeModal").onclick=closeModal;$("modal").onclick=e=>{if(e.target.id==="modal")closeModal()};
+
+
+// Mobile navigation
+(function(){
+  const menu=document.getElementById('mobileMenu');
+  const sidebar=document.querySelector('.sidebar');
+  const overlay=document.getElementById('sidebarOverlay');
+  if(!menu||!sidebar||!overlay) return;
+  function close(){sidebar.classList.remove('mobile-open');overlay.classList.remove('show');menu.setAttribute('aria-expanded','false');}
+  menu.addEventListener('click',()=>{const open=sidebar.classList.toggle('mobile-open');overlay.classList.toggle('show',open);menu.setAttribute('aria-expanded',String(open));});
+  overlay.addEventListener('click',close);
+  sidebar.querySelectorAll('button').forEach(btn=>btn.addEventListener('click',()=>{if(btn!==menu) close();}));
+})();

@@ -25,3 +25,7 @@
 .report-conduct{margin-top:18px;padding:12px 16px;border-top:1px solid #ddd;font-size:15px}.report-conduct strong{font-weight:700}
 
 .summary-row td{font-weight:600;background:#faf7f1}.average-row td{border-top:2px solid #b58a3a}.rank-row td{border-bottom:2px solid #b58a3a}.summary-row .total-cell{font-weight:800}
+
+.mobile-menu{display:none;position:fixed;top:14px;left:14px;z-index:1200;width:46px;height:46px;border:1px solid rgba(212,167,44,.45);border-radius:12px;background:var(--brown-dark);color:#fff;font-size:24px;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.18)}
+.sidebar-overlay{display:none}
+@media(max-width:520px){.mobile-menu{display:grid;place-items:center}.sidebar{display:flex!important;position:fixed;left:0;top:0;bottom:0;width:255px;height:100vh;z-index:1100;transform:translateX(-105%);transition:transform .25s ease;box-shadow:8px 0 30px rgba(0,0,0,.25)}.sidebar.mobile-open{transform:translateX(0)}.sidebar .brand h2,.sidebar .brand p,.sidebar .nav-button{font-size:inherit}.sidebar .nav-button{text-align:left}.sidebar-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1050}.sidebar-overlay.show{display:block}.main{padding:75px 14px 20px}.topbar{margin-bottom:18px}.welcome-box{padding:20px}.report-card{padding:18px}.table-wrap{overflow-x:auto}.finance-cards,.attendance-cards{grid-template-columns:1fr}}

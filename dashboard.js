@@ -10,3 +10,16 @@ const titles={home:'Home',report:'Report Card',tuition:'Tuition & Fees',attendan
 document.querySelectorAll('.nav-button').forEach(b=>b.addEventListener('click',()=>openTab(b.dataset.tab)));document.querySelector('[data-open="announcements"]').addEventListener('click',()=>openTab('announcements'));
 function openTab(id){document.querySelectorAll('.tab-page').forEach(p=>p.classList.remove('active'));$(id).classList.add('active');document.querySelectorAll('.nav-button').forEach(b=>b.classList.toggle('active',b.dataset.tab===id));$('pageTitle').textContent=titles[id];window.scrollTo({top:0,behavior:'smooth'})}
 $('logout').addEventListener('click',()=>{localStorage.removeItem('loggedInStudent');location.href='index.html'});
+
+
+// Mobile navigation
+(function(){
+  const menu=document.getElementById('mobileMenu');
+  const sidebar=document.querySelector('.sidebar');
+  const overlay=document.getElementById('sidebarOverlay');
+  if(!menu||!sidebar||!overlay) return;
+  function close(){sidebar.classList.remove('mobile-open');overlay.classList.remove('show');menu.setAttribute('aria-expanded','false');}
+  menu.addEventListener('click',()=>{const open=sidebar.classList.toggle('mobile-open');overlay.classList.toggle('show',open);menu.setAttribute('aria-expanded',String(open));});
+  overlay.addEventListener('click',close);
+  sidebar.querySelectorAll('button').forEach(btn=>btn.addEventListener('click',()=>{if(btn!==menu) close();}));
+})();
