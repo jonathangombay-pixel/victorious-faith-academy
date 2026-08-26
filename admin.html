@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>VFA Staff Portal</title>
+<link rel="stylesheet" href="admin.css">
+</head>
+<body>
+<div id="loginView" class="staff-login">
+  <div class="staff-login-card">
+    <div class="staff-logo">VFA</div>
+    <p class="eyebrow">VICTORIOUS FAITH ACADEMY</p>
+    <h1>Staff Portal</h1>
+    <p class="muted">Authorized school staff only.</p>
+    <form id="staffLoginForm">
+      <label>Staff ID</label>
+      <input id="staffId" placeholder="e.g. ADMIN001" required>
+      <label>Password</label>
+      <div class="password-row"><input id="staffPassword" type="password" placeholder="Enter staff password" required><button type="button" id="toggleStaffPassword">👁</button></div>
+      <button class="primary" type="submit">SIGN IN</button>
+      <p id="loginMessage" class="message"></p>
+    </form>
+    <div class="demo-hint"><strong>Demo staff account</strong><br>ID: <code>ADMIN001</code><br>Password: <code>VFAadmin123</code></div>
+  </div>
+</div>
+
+<div id="adminApp" class="admin-app hidden">
+  <aside class="sidebar">
+    <div class="brand"><div class="small-logo">VFA</div><h2>Victorious Faith</h2><p>Staff Portal</p></div>
+    <nav>
+      <button class="nav active" data-section="overview">🏠 Dashboard</button>
+      <button class="nav" data-section="students">👨‍🎓 Students</button>
+      <button class="nav" data-section="grades">📊 Report Cards</button>
+      <button class="nav" data-section="tuition">💰 Tuition</button>
+      <button class="nav" data-section="attendance">📅 Attendance</button>
+      <button class="nav" data-section="exams">📋 Exam Timetable</button>
+      <button class="nav" data-section="announcements">📢 Announcements</button>
+      <button class="nav" data-section="promotion">🔄 Promotion</button>
+    </nav>
+    <button class="logout" id="staffLogout">🚪 Log Out</button>
+  </aside>
+
+  <main class="main">
+    <header class="topbar"><div><p class="eyebrow">STAFF / ADMINISTRATION</p><h1 id="sectionTitle">Dashboard</h1></div><div class="staff-pill">ADMIN001 • Administrator</div></header>
+
+    <section id="overview" class="section active">
+      <div class="hero"><div><p class="eyebrow">SCHOOL MANAGEMENT</p><h2>Welcome to the VFA Staff Portal</h2><p>Manage student records, publish school information and prepare students for the next academic year.</p></div><span class="year-badge">2026–2027</span></div>
+      <div class="stat-grid"><div class="stat"><span>Total Students</span><strong id="statStudents"></strong></div><div class="stat"><span>Active Classes</span><strong id="statClasses"></strong></div><div class="stat"><span>Pending Fees</span><strong id="statFees"></strong></div><div class="stat"><span>Announcements</span><strong id="statAnnouncements"></strong></div></div>
+      <div class="panel"><div class="panel-head"><div><p class="eyebrow">QUICK ACTIONS</p><h2>Common tasks</h2></div></div><div class="quick-grid"><button data-go="students">➕ Add Student</button><button data-go="grades">📝 Enter Report Card</button><button data-go="announcements">📢 New Announcement</button><button data-go="promotion">🔄 Promote Students</button></div></div>
+    </section>
+
+    <section id="students" class="section">
+      <div class="panel"><div class="panel-head"><div><p class="eyebrow">STUDENT RECORDS</p><h2>Students</h2></div><div class="actions"><button class="secondary" id="exportStudents">Export CSV</button><label class="file-btn">Import CSV<input type="file" id="importStudents" accept=".csv" hidden></label><button class="primary small" id="addStudent">+ Add Student</button></div></div>
+      <div class="toolbar"><input id="studentSearch" placeholder="Search by name, ID or class..."><select id="gradeFilter"><option value="">All grades</option><option>Grade 7</option><option>Grade 8</option><option>Grade 9</option><option>Grade 10</option><option>Grade 11</option><option>Grade 12</option></select></div>
+      <div class="table-wrap"><table><thead><tr><th>Student ID</th><th>Name</th><th>Grade</th><th>Section</th><th>Parent/Guardian</th><th>Status</th><th></th></tr></thead><tbody id="studentRows"></tbody></table></div></div>
+    </section>
+
+    <section id="grades" class="section"><div class="panel"><div class="panel-head"><div><p class="eyebrow">ACADEMICS</p><h2>Report Card Management</h2></div></div><p class="muted">Select a student to enter or update report-card marks. The student's report card is then displayed automatically in the student portal.</p><div class="editor-grid"><select id="gradeStudent"></select><button class="primary" id="openGradeEditor">Open Student Report Card</button></div></div><div id="gradeEditor" class="panel hidden"></div></section>
+
+    <section id="tuition" class="section"><div class="panel"><div class="panel-head"><div><p class="eyebrow">FINANCE</p><h2>Tuition & Fees</h2></div></div><div class="editor-grid"><select id="feeStudent"></select><input id="feeAmount" type="number" min="0" step="0.01" placeholder="Amount paid"><input id="feePeriod" placeholder="Payment period e.g. 1st Term"><button class="primary" id="addPayment">Record Payment</button></div><div class="table-wrap"><table><thead><tr><th>Student</th><th>Period</th><th>Amount</th><th>Date</th><th>Status</th></tr></thead><tbody id="feeRows"></tbody></table></div></div></section>
+
+    <section id="attendance" class="section"><div class="panel"><div class="panel-head"><div><p class="eyebrow">ATTENDANCE</p><h2>Present / Absent</h2></div></div><div class="editor-grid"><select id="attendanceStudent"></select><select id="attendanceStatus"><option value="present">Present</option><option value="absent">Absent</option></select><input id="attendanceDate" type="date"><button class="primary" id="saveAttendance">Save Attendance</button></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Student</th><th>Status</th></tr></thead><tbody id="attendanceRows"></tbody></table></div></div></section>
+
+    <section id="exams" class="section"><div class="panel"><div class="panel-head"><div><p class="eyebrow">EXAMINATION SCHEDULE</p><h2>Publish Class Timetables</h2></div></div><div class="editor-grid five"><select id="examGrade"><option>Grade 7</option><option>Grade 8</option><option>Grade 9</option><option selected>Grade 10</option><option>Grade 11</option><option>Grade 12</option></select><select id="examSection"><option>A</option><option>B</option><option>C</option></select><input id="examDate" type="date"><input id="examSubject" placeholder="Subject"><input id="examTime" placeholder="9:00 AM – 11:00 AM"><input id="examRoom" placeholder="Room"><button class="primary" id="addExam">Publish Exam</button></div><div class="table-wrap"><table><thead><tr><th>Grade</th><th>Section</th><th>Date</th><th>Subject</th><th>Time</th><th>Room</th></tr></thead><tbody id="examAdminRows"></tbody></table></div></div></section>
+
+    <section id="announcements" class="section"><div class="panel"><div class="panel-head"><div><p class="eyebrow">SCHOOL NEWS</p><h2>Announcements</h2></div></div><div class="editor-grid"><input id="announcementTitle" placeholder="Announcement title"><input id="announcementDate" type="date"><textarea id="announcementBody" placeholder="Write the announcement..."></textarea><button class="primary" id="addAnnouncement">Publish Announcement</button></div><div id="announcementAdminList"></div></div></section>
+
+    <section id="promotion" class="section"><div class="panel"><div class="panel-head"><div><p class="eyebrow">END OF YEAR</p><h2>Student Promotion</h2></div></div><p class="muted">Review and move students to the next grade without changing their permanent Student ID.</p><div class="promotion-box"><div><strong>2026–2027</strong><span>Current academic year</span></div><div>→</div><div><strong>2027–2028</strong><span>Next academic year</span></div><button class="primary" id="promoteAll">Promote Eligible Students</button></div><div class="table-wrap"><table><thead><tr><th>Student</th><th>Current Grade</th><th>Next Grade</th><th>Status</th></tr></thead><tbody id="promotionRows"></tbody></table></div></div></section>
+  </main>
+</div>
+<div id="modal" class="modal hidden"><div class="modal-card"><button class="modal-close" id="closeModal">×</button><h2 id="modalTitle">Student</h2><div id="modalBody"></div></div></div>
+<script src="admin.js"></script>
+</body>
+</html>
