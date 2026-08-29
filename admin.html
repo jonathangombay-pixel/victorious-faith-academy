@@ -1,100 +1,24 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>VFA Staff Portal</title>
-<link rel="stylesheet" href="admin.css">
-</head>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>VFA Administration Portal</title><link rel="stylesheet" href="admin.css"></head>
 <body>
-<button class="mobile-menu" id="mobileMenu" aria-label="Open navigation" aria-expanded="false">☰</button>
-<div class="sidebar-overlay" id="sidebarOverlay"></div>
-<div id="loginView" class="staff-login">
-  <div class="staff-login-card">
-    <img class="staff-logo" src="school-logo.jpg" alt="Victorious Faith Academy logo">
-    <p class="eyebrow">VICTORIOUS FAITH ACADEMY</p><h1>Staff Portal</h1>
-    <p class="muted">Authorized school staff only.</p>
-    <form id="staffLoginForm">
-      <label>Staff ID</label><input id="staffId" placeholder="e.g. ADMIN001" required>
-      <label>Password</label><div class="password-row"><input id="staffPassword" type="password" placeholder="Enter staff password" required><button type="button" id="toggleStaffPassword">👁</button></div>
-      <button class="primary" type="submit">SIGN IN</button><p id="loginMessage" class="message"></p>
-    </form>
-    <div class="demo-hint"><strong>Demo staff account</strong><br>ID: <code>ADMIN001</code><br>Password: <code>VFAadmin123</code></div>
-  </div>
-</div>
-
+<button class="mobile-menu" id="mobileMenu" aria-label="Open navigation" aria-expanded="false">☰</button><div class="sidebar-overlay" id="sidebarOverlay"></div>
+<div id="loginView" class="staff-login"><div class="staff-login-card"><img class="staff-logo" src="school-logo.jpg" alt="Victorious Faith Academy logo"><p class="eyebrow">VICTORIOUS FAITH ACADEMY</p><h1>Administration Portal</h1><p class="muted">Authorized administrators only.</p><form id="staffLoginForm"><label>Admin ID</label><input id="staffId" autocomplete="username" required><label>Password</label><div class="password-row"><input id="staffPassword" type="password" autocomplete="current-password" required><button type="button" id="toggleStaffPassword">👁</button></div><button class="primary" type="submit">SIGN IN</button><p id="loginMessage" class="message"></p></form></div></div>
 <div id="adminApp" class="admin-app hidden">
-  <aside class="sidebar">
-    <div class="brand"><img class="small-logo" src="school-logo.jpg" alt="Victorious Faith Academy logo"><h2>Victorious Faith</h2><p>Staff Portal</p></div>
-    <nav>
-      <button class="nav active" data-section="overview">🏠 Home</button>
-      <button class="nav" data-section="grades">📊 Report Cards</button>
-      <button class="nav" data-section="tuition">💰 Tuition</button>
-      <button class="nav" data-section="attendance">📅 Attendance</button>
-      <button class="nav" data-section="exams">📋 Exam Timetable</button>
-      <button class="nav" data-section="announcements">📢 Announcements</button>
-      <button class="nav" data-section="profile">👤 Profile</button>
-    </nav>
-    <button class="logout" id="staffLogout">🚪 Log Out</button>
-  </aside>
+<aside class="sidebar"><div class="brand"><img class="small-logo" src="school-logo.jpg" alt="Victorious Faith Academy logo"><h2>Victorious Faith</h2><p>Administration</p></div><nav>
+<button class="nav active" data-section="overview">🏠 Home</button><button class="nav" data-section="students">👨‍🎓 Students</button><button class="nav" data-section="grades">📊 Grades</button><button class="nav" data-section="tuition">💰 Financial Records</button><button class="nav" data-section="assignments">📝 Assignments</button><button class="nav" data-section="announcements">📢 Announcements</button><button class="nav" data-section="exams">📋 Examination Timetable</button><button class="nav" data-section="scale">⭐ Parent Feedback</button><button class="nav" data-section="suggestions">💡 Admin Suggestions</button><button class="nav" data-section="teachers">👩‍🏫 Staff / Teacher Attendance</button><button class="nav" data-section="profile">👤 Profile</button>
+</nav><button class="logout" id="staffLogout">🚪 Log Out</button></aside>
+<main class="main"><header class="topbar"><div><p class="eyebrow">VFA ADMINISTRATION</p><h1 id="sectionTitle">Home</h1></div><div class="staff-pill" id="staffPill"></div></header>
+<section id="overview" class="section active"><div class="hero home-hero"><div><p class="eyebrow">ADMINISTRATION</p><h2 id="staffGreeting"></h2><p>Manage the information that appears in student portals from one place.</p></div><span class="year-badge" id="todayLabel"></span></div><div class="cards admin-stats"><div class="panel"><p class="eyebrow">STUDENTS</p><h2 id="statStudents">0</h2><p class="muted">Registered students</p></div><div class="panel"><p class="eyebrow">TEACHERS</p><h2 id="statTeachers">0</h2><p class="muted">Staff in the register</p></div><div class="panel"><p class="eyebrow">CONTENT</p><h2 id="statContent">0</h2><p class="muted">Published items</p></div></div></section>
+<section id="students" class="section"><div class="panel"><div class="panel-head"><div><p class="eyebrow">REGISTRAR</p><h2>Student Management</h2><p class="muted">Add students, assign their class, parent/guardian information and portal login credentials.</p></div><button class="primary" id="addStudentBtn">+ Add Student</button></div><div class="grade-toolbar"><input id="studentSearch" placeholder="Search by student name or ID..."><select id="studentClassFilter"><option value="All">All Classes</option></select></div><div class="table-wrap"><table><thead><tr><th>Student ID</th><th>Student</th><th>Class</th><th>Parent / Guardian</th><th>Portal Login</th><th>Status</th><th>Action</th></tr></thead><tbody id="studentRows"></tbody></table></div></div></section>
+<section id="grades" class="section"><div class="panel"><div class="panel-head"><div><p class="eyebrow">ACADEMICS</p><h2>Grade Management</h2><p class="muted">Enter the marks that students see in Student's Grade.</p></div></div><div class="editor-grid grade-filters"><label>Class<select id="gradeClass"></select></label><label>Subject<select id="gradeSubject"></select></label><label>Semester<select id="gradeSemester"><option value="first">First Semester</option><option value="second">Second Semester</option></select></label><label>Period<select id="gradePeriod"></select></label></div><div class="grade-toolbar"><input id="gradeSearch" placeholder="Search student by name or ID..."><button class="primary" id="saveAllGrades">Save Grades</button></div><div class="table-wrap"><table><thead><tr><th>Student ID</th><th>Student</th><th>Grade</th><th>Saved</th></tr></thead><tbody id="gradeEntryRows"></tbody></table></div></div></section>
+<section id="tuition" class="section"><div class="panel"><div class="panel-head"><div><p class="eyebrow">FINANCE</p><h2>Financial Records</h2><p class="muted">Enter tuition due and record payments for each student. Students see the resulting financial report.</p></div></div><div class="editor-grid"><label>Student<select id="feeStudent"></select></label><label>Total Fees<input id="feeDue" type="number" min="0" step="0.01"></label><label>Amount Paid<input id="feeAmount" type="number" min="0" step="0.01"></label><label>Payment Period<input id="feePeriod" placeholder="e.g. First Term"></label><button class="primary" id="addPayment">Record Payment</button></div><div id="tuitionCard" class="finance-card"></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Student</th><th>Period</th><th>Payment</th><th>Balance</th><th>Status</th><th>Action</th></tr></thead><tbody id="feeRows"></tbody></table></div></div></section>
 
-  <main class="main">
-    <header class="topbar"><div><p class="eyebrow">STAFF / ADMINISTRATION</p><h1 id="sectionTitle">Home</h1></div><div class="staff-pill">ADMIN001 • Administrator</div></header>
-
-    <section id="overview" class="section active">
-      <div class="hero home-hero"><div><p class="eyebrow">STAFF ATTENDANCE</p><h2>Good morning, Administrator 👋🏾</h2><p>Check in when you arrive at school. Your attendance is saved automatically to your staff record.</p></div><span class="year-badge" id="todayLabel"></span></div>
-      <div class="checkin-panel panel">
-        <div class="checkin-copy"><p class="eyebrow">TODAY'S CHECK-IN</p><h2 id="checkinDate"></h2><p id="checkinStatus" class="muted">You have not checked in today.</p></div>
-        <button class="checkin-button" id="staffCheckIn"><span class="check-box">☐</span><span>MARK ME PRESENT</span></button>
-      </div>
-      <div class="attendance-summary panel"><div><p class="eyebrow">MY ATTENDANCE RECORD</p><h2>This School Year</h2></div><div class="mini-stats"><div><strong id="myPresent">0</strong><span>Present Days</span></div><div><strong id="myAbsent">0</strong><span>Absent Days</span></div><div><strong id="myLate">0</strong><span>Late Days</span></div></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Check-in</th><th>Status</th></tr></thead><tbody id="staffAttendanceRows"></tbody></table></div></div>
-    </section>
-
-    <section id="grades" class="section">
-      <div class="panel"><div class="panel-head"><div><p class="eyebrow">ACADEMICS</p><h2>Report Card Management</h2><p class="muted">Enter marks for every student, class, subject and grading period. Totals and report-card summaries are calculated from saved marks.</p></div></div>
-        <div class="editor-grid grade-filters"><label>Class<select id="gradeClass"></select></label><label>Subject<select id="gradeSubject"></select></label><label>Semester<select id="gradeSemester"><option value="first">First Semester</option><option value="second">Second Semester</option></select></label><label>Period<select id="gradePeriod"></select></label></div>
-        <div class="grade-toolbar"><input id="gradeSearch" placeholder="Search student by name or ID..."><button class="secondary" id="editClassStudents">Edit Students in This Class</button><button class="primary" id="saveAllGrades">Save Grades</button></div>
-        <div class="table-wrap"><table class="grade-entry-table"><thead><tr><th>Student ID</th><th>Student</th><th>Grade</th><th>Saved</th></tr></thead><tbody id="gradeEntryRows"></tbody></table></div>
-      </div>
-    </section>
-
-    <section id="tuition" class="section">
-      <div class="panel"><div class="panel-head"><div><p class="eyebrow">REGISTRAR / FINANCE</p><h2>Tuition & Fees</h2><p class="muted">Record payments and keep each student's paid amount and balance up to date.</p></div></div>
-        <div class="editor-grid tuition-filters"><label>Student<select id="feeStudent"></select></label><label>Fee Due<input id="feeDue" type="number" min="0" step="0.01" placeholder="Total tuition due"></label><label>Amount Paid<input id="feeAmount" type="number" min="0" step="0.01" placeholder="Payment amount"></label><label>Payment Period<input id="feePeriod" placeholder="e.g. First Term"></label><button class="primary" id="addPayment">Record Payment</button></div>
-        <div id="tuitionCard" class="finance-card"></div>
-        <div class="table-wrap"><table><thead><tr><th>Date</th><th>Student</th><th>Period</th><th>Payment</th><th>Balance</th><th>Status</th></tr></thead><tbody id="feeRows"></tbody></table></div>
-      </div>
-    </section>
-
-    <section id="attendance" class="section">
-      <div class="panel"><div class="panel-head"><div><p class="eyebrow">STUDENT ATTENDANCE</p><h2>Attendance Records</h2><p class="muted">Mark attendance for any student in any class and review their attendance history.</p></div></div>
-        <div class="editor-grid attendance-filters"><label>Class<select id="attendanceClass"></select></label><label>Student<select id="attendanceStudent"></select></label><label>Date<input id="attendanceDate" type="date"></label><label>Status<select id="attendanceStatus"><option value="present">Present</option><option value="absent">Absent</option><option value="late">Late</option></select></label><button class="primary" id="saveAttendance">Save Attendance</button></div>
-        <div class="attendance-card" id="studentAttendanceCard"></div>
-        <div class="table-wrap"><table><thead><tr><th>Date</th><th>Student</th><th>Class</th><th>Status</th></tr></thead><tbody id="attendanceRows"></tbody></table></div>
-      </div>
-    </section>
-
-    <section id="exams" class="section">
-      <div class="panel"><div class="panel-head"><div><p class="eyebrow">EXAMINATION SCHEDULE</p><h2>Examination Timetable</h2><p class="muted">The timetable is already prepared. Staff only need to enter and publish the examination information.</p></div></div>
-        <div class="editor-grid exam-filters"><label>Class<select id="examGrade"></select></label><label>Date<input id="examDate" type="date"></label><label>Subject<input id="examSubject" placeholder="Subject"></label><label>Time<input id="examTime" placeholder="9:00 AM – 11:00 AM"></label><label>Room<input id="examRoom" placeholder="Room / Hall"></label><button class="primary" id="addExam">Publish Exam</button></div>
-        <div class="table-wrap"><table><thead><tr><th>Class</th><th>Date</th><th>Subject</th><th>Time</th><th>Room</th><th>Action</th></tr></thead><tbody id="examAdminRows"></tbody></table></div>
-      </div>
-    </section>
-
-    <section id="announcements" class="section">
-      <div class="panel"><div class="panel-head"><div><p class="eyebrow">SCHOOL NEWS</p><h2>Announcements</h2><p class="muted">Post messages for students and families.</p></div></div>
-        <div class="announcement-form"><input id="announcementTitle" placeholder="Announcement title"><input id="announcementDate" type="date"><select id="announcementAudience"><option value="All Students">All Students</option><option value="All Staff">All Staff</option><option value="Grade 1">Grade 1</option><option value="Grade 2">Grade 2</option><option value="Grade 3">Grade 3</option><option value="Grade 4">Grade 4</option><option value="Grade 5">Grade 5</option><option value="Grade 6">Grade 6</option><option value="Grade 7">Grade 7</option><option value="Grade 8">Grade 8</option><option value="Grade 9">Grade 9</option></select><textarea id="announcementBody" placeholder="Write the announcement..."></textarea><button class="primary" id="addAnnouncement">Publish Announcement</button></div>
-        <div id="announcementAdminList"></div>
-      </div>
-    </section>
-
-    <section id="profile" class="section">
-      <div class="profile-grid"><div class="panel profile-card"><p class="eyebrow">MY PROFILE</p><img class="profile-photo" src="school-logo.jpg" alt="Staff profile"><h2 id="profileName">Administrator</h2><p class="muted" id="profilePosition">School Administrator</p><div class="profile-details"><p><strong>Staff ID</strong><span id="profileId">ADMIN001</span></p><p><strong>Department</strong><span id="profileDepartment">Administration</span></p><p><strong>School Year</strong><span>2026–2027</span></p></div><button class="primary" id="editProfile">Edit Profile</button></div>
-      <div class="panel id-card-panel"><p class="eyebrow">STAFF ID CARD</p><div class="staff-id-card"><img src="school-logo.jpg" alt="VFA logo"><div class="id-photo">ADMIN</div><h3 id="idCardName">Administrator</h3><p id="idCardPosition">School Administrator</p><span>STAFF ID: <strong id="idCardId">ADMIN001</strong></span><small>VICTORIOUS FAITH ACADEMY</small></div><button class="secondary" id="printIdCard">Print ID Card</button></div></div>
-    </section>
-  </main>
-</div>
-<div id="modal" class="modal hidden"><div class="modal-card"><button class="modal-close" id="closeModal">×</button><h2 id="modalTitle">Edit</h2><div id="modalBody"></div></div></div>
-<script src="admin.js"></script>
-</body>
-</html>
+<section id="assignments" class="section"><div class="panel"><div class="panel-head"><div><p class="eyebrow">ACADEMICS</p><h2>Assignments</h2><p class="muted">Publish assignments to a class or all students.</p></div></div><div class="editor-grid"><label>Class<select id="assignmentClass"></select></label><label>Subject<input id="assignmentSubject" placeholder="Subject"></label><label>Due Date<input id="assignmentDue" type="date"></label><label>Title<input id="assignmentTitle" placeholder="Assignment title"></label></div><textarea id="assignmentBody" placeholder="Assignment instructions"></textarea><div class="submit-row"><button class="primary" id="addAssignment">Publish Assignment</button></div><div id="assignmentAdminList"></div></div></section>
+<section id="announcements" class="section"><div class="panel"><div class="panel-head"><div><p class="eyebrow">SCHOOL NEWS</p><h2>Announcements</h2><p class="muted">Publish a school announcement. Choose All Students to send it to every student portal.</p></div></div><div class="editor-grid"><label>Title<input id="announcementTitle" placeholder="Announcement title"></label><label>Date<input id="announcementDate" type="date"></label><label>Audience<select id="announcementAudience"><option value="All Students">All Students</option></select></label></div><textarea id="announcementBody" placeholder="Announcement message"></textarea><div class="submit-row"><button class="primary" id="addAnnouncement">Publish Announcement</button></div><div id="announcementAdminList"></div></div></section>
+<section id="exams" class="section"><div class="panel"><div class="panel-head"><div><p class="eyebrow">EXAMINATION SCHEDULE</p><h2>Examination Timetable</h2><p class="muted">Publish exam entries by class. Students see only the timetable for their class.</p></div></div><div class="editor-grid"><label>Class<select id="examGrade"></select></label><label>Date<input id="examDate" type="date"></label><label>Subject<input id="examSubject" placeholder="Subject"></label><label>Time<input id="examTime" placeholder="9:00 AM – 11:00 AM"></label><label>Room<input id="examRoom" placeholder="Room / Hall"></label></div><div class="submit-row"><button class="primary" id="addExam">Publish Exam</button></div><div class="table-wrap"><table><thead><tr><th>Class</th><th>Date</th><th>Subject</th><th>Time</th><th>Room</th><th>Action</th></tr></thead><tbody id="examAdminRows"></tbody></table></div></div></section>
+<section id="scale" class="section"><div class="panel"><div class="panel-head"><div><p class="eyebrow">PARENT FEEDBACK</p><h2>Scale Your Child Responses</h2><p class="muted">Parents complete the checklist in the student portal. Their responses appear here for the administration team.</p></div></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Student</th><th>Parent / Guardian</th><th>Feedback</th><th>Notes</th></tr></thead><tbody id="scaleRows"></tbody></table></div></div></section>
+<section id="suggestions" class="section"><div class="panel"><div class="panel-head"><div><p class="eyebrow">ADMINISTRATION</p><h2>Admin Suggestions</h2><p class="muted">Write messages for individual students or their class.</p></div></div><div class="editor-grid"><label>Send To<select id="suggestionTarget"></select></label><label>Title<input id="suggestionTitle" placeholder="Suggestion title"></label></div><textarea id="suggestionBody" placeholder="Message for the student"></textarea><div class="submit-row"><button class="primary" id="addSuggestion">Publish Suggestion</button></div><div id="suggestionAdminList"></div></div></section>
+<section id="teachers" class="section"><div class="panel"><div class="panel-head"><div><p class="eyebrow">STAFF REGISTER</p><h2>Staff / Teacher Attendance</h2><p class="muted">Add school staff and mark each person Present or Absent for the selected day.</p></div></div><div class="editor-grid"><label>Staff / Teacher Name<input id="teacherName" placeholder="Full name"></label><label>Position / Subject<input id="teacherDepartment" placeholder="e.g. Mathematics Teacher"></label><button class="primary" id="addTeacher">Add Staff Member</button></div><div class="panel-head" style="margin-top:24px"><div><p class="eyebrow">DAILY REGISTER</p><h2 id="teacherAttendanceDateTitle"></h2></div><label style="max-width:220px">Date<input id="teacherAttendanceDate" type="date"></label></div><div class="table-wrap"><table><thead><tr><th>Name</th><th>Position</th><th>Status</th><th>Check-in</th><th>Action</th></tr></thead><tbody id="teacherAttendanceRows"></tbody></table></div><div class="panel-head" style="margin-top:24px"><div><p class="eyebrow">STAFF LIST</p><h2>Manage Staff</h2></div></div><div class="table-wrap"><table><thead><tr><th>Name</th><th>Position</th><th>Remove</th></tr></thead><tbody id="teacherRows"></tbody></table></div></div></section>
+<section id="profile" class="section"><div class="panel profile-panel"><p class="eyebrow">ADMINISTRATOR</p><h2 id="profileName"></h2><p id="profilePosition"></p><p><strong>Admin ID:</strong> <span id="profileId"></span></p><p><strong>Department:</strong> <span id="profileDepartment"></span></p></div></section>
+</main></div><div id="modal" class="modal hidden"><div class="modal-card"><button id="closeModal" class="modal-close">×</button><h2 id="modalTitle"></h2><div id="modalBody"></div></div></div><script src="admin.js"></script></body></html>
