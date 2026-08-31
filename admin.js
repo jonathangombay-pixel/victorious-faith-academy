@@ -1,53 +1,230 @@
-const ADMINS={
- "VFA-OWNER":{id:"VFA-OWNER",password:"VFAOwner2026!",name:"School Owner",role:"Owner / Administrator",department:"Administration"},
- "VFA-ASSISTANT":{id:"VFA-ASSISTANT",password:"VFAAssist2026!",name:"School Assistant",role:"Assistant Administrator",department:"Administration"},
- "VFA-JONATHAN":{id:"VFA-JONATHAN",password:"VFAJonathan2026!",name:"Jonathan Gombay",role:"Administrator",department:"Administration"}
+const ADMIN_ACCOUNTS=[
+{id:"VFA-OWNER",password:"VFAOwner2026!",name:"School Owner",role:"Owner",position:"School Owner",department:"Administration"},
+{id:"VFA-ASSISTANT",password:"VFAAssist2026!",name:"School Assistant",role:"Assistant",position:"School Assistant",department:"Administration"},
+{id:"VFA-JONATHAN",password:"VFAJonathan2026!",name:"Jonathan Gombay",role:"Administrator",position:"Administrator",department:"Administration"}
+];
+const BASE_ID="0020172";
+const classes=["Day Care","Nursery 1","Nursery 2","Kindergarten",...Array.from({length:9},(_,i)=>`Grade ${i+1}`)];
+const subjects=["Mathematics","English Language","Science","Social Studies","ICT","Biology","Chemistry","Physics"];
+const periods={first:["1st Period","2nd Period","3rd Period","Exam"],second:["4th Period","5th Period","6th Period","Exam"]};
+const get=(k,d)=>{try{const v=JSON.parse(localStorage.getItem(k));return v??d}catch{return d}};
+let students=get("vfaAdminStudents",[]);
+let payments=get("vfaAdminPayments",[]);
+// Remove legacy demo records from older portal builds.
+const legacyIds=["0020172(001)","0020172(002)","0020172(003)","0020172(004)"];
+const legacyNames=["Andrew Johnson","Michael Smith","Sarah Williams"];
+students=students.filter(s=>!legacyIds.includes(s.id)&&!legacyNames.includes(s.name));
+payments=payments.filter(p=>!legacyIds.includes(p.studentId));
+let gradesData=get("vfaGrades",{});
+let exams=get("vfaExams",[]);
+let assignments=get("vfaAssignments",[]);
+let announcements=get("vfaAdminAnnouncements",[]);
+let suggestions=get("vfaAdminSuggestions",[]);
+let scaleResponses=get("vfaScaleResponses",[]);
+let staff=get("vfaStaff",[]);
+let staffAttendance=get("vfaStaffAttendance",[]);
+let reportMeta=get("vfaReportMeta",{});
+let currentAdmin=null;
+const $=id=>document.getElementById(id);
+const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]));
+const today=()=>new Date().toISOString().slice(0,10);
+function save(){
+ localStorage.setItem("vfaAdminStudents",JSON.stringify(students));
+ localStorage.setItem("vfaAdminPayments",JSON.stringify(payments));
+ localStorage.setItem("vfaGrades",JSON.stringify(gradesData));
+ localStorage.setItem("vfaExams",JSON.stringify(exams));
+ localStorage.setItem("vfaAssignments",JSON.stringify(assignments));
+ localStorage.setItem("vfaAdminAnnouncements",JSON.stringify(announcements));
+ localStorage.setItem("vfaAdminSuggestions",JSON.stringify(suggestions));
+ localStorage.setItem("vfaScaleResponses",JSON.stringify(scaleResponses));
+ localStorage.setItem("vfaStaff",JSON.stringify(staff));
+ localStorage.setItem("vfaStaffAttendance",JSON.stringify(staffAttendance));
+ localStorage.setItem("vfaReportMeta",JSON.stringify(reportMeta));
+}
+function makePassword(){
+ const chars="ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+ let out="";for(let i=0;i<7;i++)out+=chars[Math.floor(Math.random()*chars.length)];return out;
+}
+function sortStudents(){students.sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:"base"}));}
+function assignAlphabeticalIds(){
+ const oldIds=students.map(s=>s.id);
+ sortStudents();
+ const map={};students.forEach((s,i)=>{const old=s.id||"";const next=`${BASE_ID}(${String(i+1).padStart(3,"0")})`;if(old&&old!==next)map[old]=next;s.id=next;});
+ if(Object.keys(map).length){
+   payments.forEach(p=>{if(map[p.studentId])p.studentId=map[p.studentId];});
+   const nextGrades={};Object.entries(gradesData).forEach(([k,v])=>{const old=k.split("|")[0];nextGrades[(map[old]||old)+k.slice(old.length)]=v;});gradesData=nextGrades;
+   scaleResponses.forEach(r=>{if(map[r.studentId])r.studentId=map[r.studentId];});
+   const logged=get("loggedInStudent",null);if(logged&&map[logged.id]){logged.id=map[logged.id];localStorage.setItem("loggedInStudent",JSON.stringify(logged));}
+ }
+}
+function fillSelect(id,items,selected){
+ const el=$(id); if(!el)return;
+ el.innerHTML=items.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("");
+ if(selected && items.includes(selected))el.value=selected;
+}
+function init(){
+ students.forEach(s=>{if(!s.password)s.password=makePassword();});
+ if(students.length)assignAlphabeticalIds();
+ if(!students.length) localStorage.removeItem("vfaAdminStudents");
+ fillSelect("studentClass",classes);
+ fillSelect("gradeClass",classes); fillSelect("financeClass",classes); fillSelect("examGrade",classes);
+ fillSelect("assignmentAudience",["All Students",...classes]);
+ fillSelect("announcementAudience",["All Students",...classes]);
+ fillSelect("suggestionAudience",["All Students",...classes]);
+ $("staffDate").value=today();
+ $("announcementDate").value=today();
+ renderAll();
+}
+function renderAll(){
+ renderHome();renderStudents();renderGrades();renderFinanceClass();renderExams();renderAssignments();renderAnnouncements();renderScale();renderSuggestions();renderStaff();
+}
+$("staffLoginForm").onsubmit=e=>{
+ e.preventDefault();const id=$("staffId").value.trim(),pw=$("staffPassword").value;
+ currentAdmin=ADMIN_ACCOUNTS.find(a=>a.id===id&&a.password===pw);
+ if(!currentAdmin){$("loginMessage").textContent="Incorrect Admin ID or password.";return}
+ $("loginView").classList.add("hidden");$("adminApp").classList.remove("hidden");
+ $("staffPill").textContent=`${currentAdmin.name} • ${currentAdmin.role}`;
+ init();
 };
-const gradeList=["Kindergarten",...Array.from({length:9},(_,i)=>`Grade ${i+1}`)], subjects=["Mathematics","English Language","Science","Social Studies","ICT","Biology","Chemistry","Physics"], periods={first:["1st Period","2nd Period","3rd Period","Exam"],second:["4th Period","5th Period","6th Period","Exam"]};
-const get=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch{return d}},$=id=>document.getElementById(id),today=()=>new Date().toISOString().slice(0,10),esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]));
-const VERSION="admin-v3";if(localStorage.getItem("vfaPortalDataVersion")!==VERSION){["vfaAdminStudents","vfaAdminPayments","vfaExams","vfaAdminAnnouncements","vfaGrades","vfaScaleResponses","vfaAssignments","vfaSuggestions","vfaTeacherRecords","vfaTeacherAttendance","loggedInStudent"].forEach(k=>localStorage.removeItem(k));localStorage.setItem("vfaPortalDataVersion",VERSION)}
-let students=get("vfaAdminStudents",[]),payments=get("vfaAdminPayments",[]),exams=get("vfaExams",[]),announcements=get("vfaAdminAnnouncements",[]),gradesData=get("vfaGrades",{}),scaleResponses=get("vfaScaleResponses",[]),assignments=get("vfaAssignments",[]),suggestions=get("vfaSuggestions",[]),teacherRecords=get("vfaTeacherRecords",[]),teacherAttendance=get("vfaTeacherAttendance",[]),currentAdmin=null;
-function save(){localStorage.setItem("vfaAdminStudents",JSON.stringify(students));localStorage.setItem("vfaAdminPayments",JSON.stringify(payments));localStorage.setItem("vfaExams",JSON.stringify(exams));localStorage.setItem("vfaAdminAnnouncements",JSON.stringify(announcements));localStorage.setItem("vfaGrades",JSON.stringify(gradesData));localStorage.setItem("vfaScaleResponses",JSON.stringify(scaleResponses));localStorage.setItem("vfaAssignments",JSON.stringify(assignments));localStorage.setItem("vfaSuggestions",JSON.stringify(suggestions));localStorage.setItem("vfaTeacherRecords",JSON.stringify(teacherRecords));localStorage.setItem("vfaTeacherAttendance",JSON.stringify(teacherAttendance))}
-function loginAdmin(){const id=$("staffId").value.trim().toUpperCase(),p=$("staffPassword").value,a=ADMINS[id];if(!a||a.password!==p){$("loginMessage").textContent="Incorrect Admin ID or password.";return}currentAdmin={...a};$("loginView").classList.add("hidden");$("adminApp").classList.remove("hidden");renderIdentity();init()}
-$("staffLoginForm").onsubmit=e=>{e.preventDefault();loginAdmin()};$("toggleStaffPassword").onclick=()=>$("staffPassword").type=$("staffPassword").type==="password"?"text":"password";$("staffLogout").onclick=()=>location.reload();
-function renderIdentity(){$("staffPill").textContent=`${currentAdmin.name} • ${currentAdmin.role}`;$('staffGreeting').textContent=`Welcome, ${currentAdmin.name}`;$('todayLabel').textContent=new Date(today()+"T12:00:00").toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric",year:"numeric"});$('profileName').textContent=currentAdmin.name;$('profilePosition').textContent=currentAdmin.role;$('profileId').textContent=currentAdmin.id;$('profileDepartment').textContent=currentAdmin.department}
-const titles={overview:"Home",students:"Students",grades:"Grades",tuition:"Financial Records",assignments:"Assignments",announcements:"Announcements",exams:"Examination Timetable",scale:"Parent Feedback",suggestions:"Admin Suggestions",teachers:"Staff / Teacher Attendance",profile:"Profile"};
-function openSection(id){document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));$(id).classList.add('active');document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active',b.dataset.section===id));$('sectionTitle').textContent=titles[id];window.scrollTo({top:0,behavior:'smooth'})}document.querySelectorAll('.nav').forEach(b=>b.onclick=()=>openSection(b.dataset.section));
-function init(){renderStats();setupStudents();setupGrades();setupTuition();setupAssignments();setupAnnouncements();setupExams();setupScale();setupSuggestions();setupTeachers()}
-function renderStats(){$('statStudents').textContent=students.filter(s=>s.status!=="Inactive").length;$('statTeachers').textContent=teacherRecords.length;$('statContent').textContent=assignments.length+announcements.length+exams.length+suggestions.length}
-function nextId(){let n=students.length+1;while(students.some(s=>s.id===`VFA-STU-${String(n).padStart(4,'0')}`))n++;return `VFA-STU-${String(n).padStart(4,'0')}`}
-function setupStudents(){const filter=$('studentClassFilter');filter.innerHTML='<option value="All">All Classes</option>'+gradeList.map(g=>`<option>${g}</option>`).join('');$('addStudentBtn').onclick=()=>editStudent('');$('studentSearch').oninput=renderStudents;filter.onchange=renderStudents;renderStudents()}
-function renderStudents(){const q=$('studentSearch').value.toLowerCase(),f=$('studentClassFilter').value;const list=students.filter(s=>(f==='All'||s.grade===f)&&(!q||`${s.name} ${s.id}`.toLowerCase().includes(q)));$('studentRows').innerHTML=list.map(s=>`<tr><td>${esc(s.id)}</td><td><strong>${esc(s.name)}</strong></td><td>${esc(s.grade)}</td><td>${esc(s.parent)}</td><td>${s.loginId?'<span class="success">Assigned</span>':'<span class="muted">Not assigned</span>'}</td><td>${esc(s.status||'Active')}</td><td><button class="icon-btn" onclick="editStudent('${esc(s.id)}')">✏️</button></td></tr>`).join('')||'<tr><td colspan="7">No students registered yet.</td></tr>'}
-window.editStudent=id=>{const s=students.find(x=>x.id===id)||{id:nextId(),name:'',grade:'',parent:'',loginId:'',password:'',status:'Active'};openModal(id?'Edit Student':'Add Student',`<form id="studentForm" class="form-grid"><label>Student ID<input name="id" value="${esc(s.id)}" readonly></label><label>Full Name<input name="name" value="${esc(s.name)}" required></label><label>Class<select name="grade" required><option value="">Select class</option>${gradeList.map(g=>`<option ${s.grade===g?'selected':''}>${g}</option>`).join('')}</select></label><label>Parent / Guardian<input name="parent" value="${esc(s.parent)}"></label><label>Class Teacher<input name="teacher" value="${esc(s.teacher)}"></label><label>School Year<input name="schoolYear" value="${esc(s.schoolYear)}" placeholder="e.g. 2026–2027"></label><label>Conduct / Report Note<input name="conduct" value="${esc(s.conduct)}"></label><label>Portal Login ID<input name="loginId" value="${esc(s.loginId)}" placeholder="e.g. VFA-STU-0001" required></label><label>Portal Password<input name="password" value="${esc(s.password)}" placeholder="Assign a password" required></label><label>Status<select name="status"><option ${s.status!=='Inactive'?'selected':''}>Active</option><option ${s.status==='Inactive'?'selected':''}>Inactive</option></select></label><div class="submit-row"><button class="primary" type="submit">Save Student</button></div></form>`);$('studentForm').onsubmit=e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target));const i=students.findIndex(x=>x.id===f.id);if(i>=0)students[i]={...students[i],...f};else students.push({...f,tuition:{total:0,paid:0,balance:0},payments:[],attendance:[],teacher:''});save();closeModal();init();alert('Student record saved.')}}
-function setupGrades(){$('gradeClass').innerHTML=gradeList.map(g=>`<option>${g}</option>`).join('');$('gradeSubject').innerHTML=subjects.map(s=>`<option>${s}</option>`).join('');$('gradeSemester').onchange=updatePeriods;$('gradePeriod').onchange=renderGradeRows;$('gradeClass').onchange=renderGradeRows;$('gradeSubject').onchange=renderGradeRows;$('gradeSearch').oninput=renderGradeRows;$('saveAllGrades').onclick=saveGrades;updatePeriods()}
-function updatePeriods(){$('gradePeriod').innerHTML=periods[$('gradeSemester').value].map(p=>`<option>${p}</option>`).join('');renderGradeRows()}
-function gradeKey(id){return `${id}|${$('gradeSubject').value}|${$('gradePeriod').value}`}
-function renderGradeRows(){const cls=$('gradeClass').value,q=$('gradeSearch').value.toLowerCase(),list=students.filter(s=>s.grade===cls&&s.status!=='Inactive'&&(!q||`${s.name} ${s.id}`.toLowerCase().includes(q)));$('gradeEntryRows').innerHTML=list.map(s=>{const k=gradeKey(s.id),v=gradesData[k]??'';return `<tr><td>${esc(s.id)}</td><td>${esc(s.name)}</td><td><input class="grade-input" data-id="${esc(s.id)}" value="${esc(v)}" type="number" min="0" max="100"></td><td>${v!==''?'<span class="success">Saved</span>':'<span class="muted">Not entered</span>'}</td></tr>`}).join('')||'<tr><td colspan="4">No students are registered in this class yet.</td></tr>'}
-function saveGrades(){document.querySelectorAll('.grade-input').forEach(i=>{const v=i.value.trim(),k=gradeKey(i.dataset.id);if(v==='')delete gradesData[k];else gradesData[k]=Math.max(0,Math.min(100,Number(v)))});save();renderGradeRows();alert('Grades saved successfully.')}
-function setupTuition(){$('feeStudent').innerHTML=students.map(s=>`<option value="${esc(s.id)}">${esc(s.name)} — ${esc(s.id)}</option>`).join('');$('feeStudent').onchange=renderTuitionCard;$('addPayment').onclick=addPayment;renderTuitionCard();renderFees()}
-function renderTuitionCard(){const s=students.find(x=>x.id===$('feeStudent').value);$('feeDue').value=s?.tuition?.total??'';const paid=s?.tuition?.paid??0;$('tuitionCard').innerHTML=s?`<strong>${esc(s.name)}</strong><p>Total fees: ${s.tuition?.total??0} • Paid: ${paid} • Balance: ${(s.tuition?.total??0)-paid}</p>`:''}
-function addPayment(){const s=students.find(x=>x.id===$('feeStudent').value),due=Number($('feeDue').value||0),amt=Number($('feeAmount').value||0),period=$('feePeriod').value.trim();if(!s||due<0||amt<0||!period)return alert('Complete the financial record fields.');s.tuition=s.tuition||{total:0,paid:0,balance:0};s.tuition.total=due;s.tuition.paid=(s.tuition.paid||0)+amt;s.tuition.balance=Math.max(0,due-s.tuition.paid);payments.unshift({id:Date.now(),studentId:s.id,studentName:s.name,period,amount:amt,date:today()});save();$('feeAmount').value='';$('feePeriod').value='';renderTuitionCard();renderFees();alert('Financial record saved.')}
-function renderFees(){$('feeRows').innerHTML=payments.map(p=>{const s=students.find(x=>x.id===p.studentId),bal=s?.tuition?.balance??0;return `<tr><td>${esc(p.date)}</td><td>${esc(p.studentName)}</td><td>${esc(p.period)}</td><td>${esc(p.amount)}</td><td>${esc(bal)}</td><td>${bal<=0?'<span class="success">Paid</span>':'<span class="warning">Balance</span>'}</td><td><button class="icon-btn" onclick="removePayment(${p.id})">🗑️</button></td></tr>`}).join('')||'<tr><td colspan="7">No financial records yet.</td></tr>'}window.removePayment=id=>{payments=payments.filter(p=>p.id!==id);save();renderFees()}
-function setupAttendance(){$('attendanceClass').innerHTML=gradeList.map(g=>`<option>${g}</option>`).join('');$('attendanceClass').onchange=refreshAttendanceStudents;$('saveAttendance').onclick=saveAttendance;$('attendanceDate').value=today();refreshAttendanceStudents();renderAttendance()}
-function refreshAttendanceStudents(){const c=$('attendanceClass').value;$('attendanceStudent').innerHTML=students.filter(s=>s.grade===c&&s.status!=='Inactive').map(s=>`<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('')}
-function saveAttendance(){const id=$('attendanceStudent').value,s=students.find(x=>x.id===id);if(!s)return alert('Select a student.');attendanceRecords=attendanceRecords.filter(r=>!(r.studentId===id&&r.date===$('attendanceDate').value));attendanceRecords.push({id:Date.now(),studentId:id,studentName:s.name,grade:s.grade,date:$('attendanceDate').value,status:$('attendanceStatus').value});save();renderAttendance()}
-function renderAttendance(){$('attendanceRows').innerHTML=attendanceRecords.sort((a,b)=>b.date.localeCompare(a.date)).map(r=>`<tr><td>${esc(r.date)}</td><td>${esc(r.studentName)}</td><td>${esc(r.grade)}</td><td>${esc(r.status)}</td><td><button class="icon-btn" onclick="removeAttendance(${r.id})">🗑️</button></td></tr>`).join('')||'<tr><td colspan="5">No attendance records yet.</td></tr>'}window.removeAttendance=id=>{attendanceRecords=attendanceRecords.filter(r=>r.id!==id);save();renderAttendance()}
-function setupAssignments(){$('assignmentClass').innerHTML='<option value="All Students">All Students</option>'+gradeList.map(g=>`<option>${g}</option>`).join('');$('addAssignment').onclick=addAssignment;renderAssignments()}
-function addAssignment(){const x={id:Date.now(),grade:$('assignmentClass').value,subject:$('assignmentSubject').value.trim(),due:$('assignmentDue').value,title:$('assignmentTitle').value.trim(),body:$('assignmentBody').value.trim(),date:today()};if(!x.title||!x.body||!x.subject||!x.due)return alert('Complete the assignment fields.');assignments.unshift(x);save();['assignmentSubject','assignmentDue','assignmentTitle','assignmentBody'].forEach(id=>$(id).value='');renderAssignments();renderStats()}
-function renderAssignments(){$('assignmentAdminList').innerHTML=assignments.map(a=>`<div class="announcement-item"><div><strong>${esc(a.title)}</strong><span>${esc(a.subject)} • ${esc(a.grade)} • Due ${esc(a.due)}</span><p>${esc(a.body)}</p></div><button class="icon-btn" onclick="removeAssignment(${a.id})">🗑️</button></div>`).join('')||'<p class="muted">No assignments published yet.</p>'}window.removeAssignment=id=>{assignments=assignments.filter(a=>a.id!==id);save();renderAssignments();renderStats()}
-function setupAnnouncements(){$('announcementDate').value=today();$('addAnnouncement').onclick=addAnnouncement;renderAnnouncements()}
-function addAnnouncement(){const x={id:Date.now(),title:$('announcementTitle').value.trim(),date:$('announcementDate').value,audience:$('announcementAudience').value,body:$('announcementBody').value.trim()};if(!x.title||!x.date||!x.body)return alert('Complete the announcement.');announcements.unshift(x);save();$('announcementTitle').value='';$('announcementBody').value='';renderAnnouncements();renderStats()}
-function renderAnnouncements(){$('announcementAdminList').innerHTML=announcements.map(a=>`<div class="announcement-item"><div><strong>${esc(a.title)}</strong><span>${esc(a.date)} • ${esc(a.audience)}</span><p>${esc(a.body)}</p></div><button class="icon-btn" onclick="removeAnnouncement(${a.id})">🗑️</button></div>`).join('')||'<p class="muted">No announcements published yet.</p>'}window.removeAnnouncement=id=>{announcements=announcements.filter(a=>a.id!==id);save();renderAnnouncements();renderStats()}
-function setupExams(){$('examGrade').innerHTML=gradeList.map(g=>`<option>${g}</option>`).join('');$('addExam').onclick=addExam;renderExams()}
-function addExam(){const x={id:Date.now(),grade:$('examGrade').value,date:$('examDate').value,subject:$('examSubject').value.trim(),time:$('examTime').value.trim(),room:$('examRoom').value.trim()};if(!x.date||!x.subject||!x.time||!x.room)return alert('Complete the examination fields.');exams.push(x);save();['examDate','examSubject','examTime','examRoom'].forEach(id=>$(id).value='');renderExams();renderStats()}
-function renderExams(){$('examAdminRows').innerHTML=exams.map(x=>`<tr><td>${esc(x.grade)}</td><td>${esc(x.date)}</td><td>${esc(x.subject)}</td><td>${esc(x.time)}</td><td>${esc(x.room)}</td><td><button class="icon-btn" onclick="removeExam(${x.id})">🗑️</button></td></tr>`).join('')||'<tr><td colspan="6">No examinations published yet.</td></tr>'}window.removeExam=id=>{exams=exams.filter(x=>x.id!==id);save();renderExams();renderStats()}
-function setupScale(){renderScale()};function renderScale(){$('scaleRows').innerHTML=scaleResponses.sort((a,b)=>b.date.localeCompare(a.date)).map(r=>`<tr><td>${esc(r.date)}</td><td>${esc(r.studentName)}</td><td>${esc(r.parent)}</td><td>${esc((r.answers||[]).join(', '))}</td><td>${esc(r.notes)}</td></tr>`).join('')||'<tr><td colspan="5">No parent feedback has been submitted yet.</td></tr>'}
-function setupSuggestions(){$('suggestionTarget').innerHTML='<option value="All Students">All Students</option>'+students.map(s=>`<option value="${esc(s.id)}">${esc(s.name)} — ${esc(s.id)}</option>`).join('');$('addSuggestion').onclick=addSuggestion;renderSuggestions()}
-function addSuggestion(){const x={id:Date.now(),target:$('suggestionTarget').value,title:$('suggestionTitle').value.trim(),body:$('suggestionBody').value.trim(),date:today(),from:currentAdmin.name};if(!x.title||!x.body)return alert('Complete the suggestion.');suggestions.unshift(x);save();$('suggestionTitle').value='';$('suggestionBody').value='';renderSuggestions();renderStats()}
-function renderSuggestions(){$('suggestionAdminList').innerHTML=suggestions.map(s=>`<div class="announcement-item"><div><strong>${esc(s.title)}</strong><span>${esc(s.date)} • To: ${esc(s.target)} • From: ${esc(s.from)}</span><p>${esc(s.body)}</p></div><button class="icon-btn" onclick="removeSuggestion(${s.id})">🗑️</button></div>`).join('')||'<p class="muted">No suggestions published yet.</p>'}window.removeSuggestion=id=>{suggestions=suggestions.filter(s=>s.id!==id);save();renderSuggestions();renderStats()}
-function setupTeachers(){$('teacherAttendanceDate').value=today();$('teacherAttendanceDate').onchange=renderTeacherAttendance;$('addTeacher').onclick=addTeacher;renderTeacherAttendance();renderTeacherList()}
-function addTeacher(){const name=$('teacherName').value.trim(),position=$('teacherDepartment').value.trim();if(!name||!position)return alert('Enter the staff member name and position.');teacherRecords.push({id:Date.now(),name,position});save();$('teacherName').value='';$('teacherDepartment').value='';renderTeacherAttendance();renderTeacherList();renderStats()}
-function renderTeacherAttendance(){const d=$('teacherAttendanceDate').value||today();$('teacherAttendanceDateTitle').textContent=new Date(d+'T12:00:00').toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric',year:'numeric'});$('teacherAttendanceRows').innerHTML=teacherRecords.map(t=>{const r=teacherAttendance.find(x=>x.teacherId===t.id&&x.date===d);return `<tr><td>${esc(t.name)}</td><td>${esc(t.position)}</td><td>${r?esc(r.status):'<span class="muted">Not marked</span>'}</td><td>${esc(r?.time||'—')}</td><td><button class="secondary" onclick="markTeacher(${t.id},'Present')">Present</button> <button class="secondary" onclick="markTeacher(${t.id},'Absent')">Absent</button></td></tr>`}).join('')||'<tr><td colspan="5">No staff members added yet.</td></tr>'}
-window.markTeacher=(id,status)=>{const d=$('teacherAttendanceDate').value||today(),i=teacherAttendance.findIndex(x=>x.teacherId===id&&x.date===d),r={teacherId:id,date:d,status,time:status==='Present'?new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}):''};if(i>=0)teacherAttendance[i]=r;else teacherAttendance.push(r);save();renderTeacherAttendance()};function renderTeacherList(){$('teacherRows').innerHTML=teacherRecords.map(t=>`<tr><td>${esc(t.name)}</td><td>${esc(t.position)}</td><td><button class="icon-btn" onclick="removeTeacher(${t.id})">🗑️</button></td></tr>`).join('')||'<tr><td colspan="3">No staff members added yet.</td></tr>'}window.removeTeacher=id=>{teacherRecords=teacherRecords.filter(t=>t.id!==id);teacherAttendance=teacherAttendance.filter(r=>r.teacherId!==id);save();renderTeacherAttendance();renderTeacherList();renderStats()}
-function openModal(title,html){$('modalTitle').textContent=title;$('modalBody').innerHTML=html;$('modal').classList.remove('hidden')}function closeModal(){$('modal').classList.add('hidden')}window.closeModal=closeModal;$('closeModal').onclick=closeModal;$('modal').onclick=e=>{if(e.target.id==='modal')closeModal()};
-(function(){const menu=$('mobileMenu'),sidebar=document.querySelector('.sidebar'),overlay=$('sidebarOverlay');if(!menu)return;function close(){sidebar.classList.remove('mobile-open');overlay.classList.remove('show');menu.setAttribute('aria-expanded','false')}menu.onclick=()=>{const o=sidebar.classList.toggle('mobile-open');overlay.classList.toggle('show',o);menu.setAttribute('aria-expanded',String(o))};overlay.onclick=close;sidebar.querySelectorAll('button').forEach(b=>b.addEventListener('click',close))})();
+$("toggleStaffPassword").onclick=()=>{$("staffPassword").type=$("staffPassword").type==="password"?"text":"password"};
+$("staffLogout").onclick=()=>{currentAdmin=null;$("adminApp").classList.add("hidden");$("loginView").classList.remove("hidden");$("staffId").value="";$("staffPassword").value=""};
+document.querySelectorAll(".nav").forEach(b=>b.onclick=()=>openSection(b.dataset.section));
+function openSection(id){document.querySelectorAll(".section").forEach(s=>s.classList.remove("active"));$(id).classList.add("active");document.querySelectorAll(".nav").forEach(b=>b.classList.toggle("active",b.dataset.section===id));$("sectionTitle").textContent={overview:"Home",students:"Students",grades:"Report Cards",tuition:"Financial Records",exams:"Examination Timetable",assignments:"Assignments",announcements:"Announcements",scale:"Scale Your Child",suggestions:"Admin Suggestions",staff:"Staff / Teacher Attendance"}[id]||"Home";window.scrollTo({top:0,behavior:"smooth"});}
+function renderHome(){
+ $("welcomeTitle").textContent=`Welcome, ${currentAdmin?.name||"Administrator"} 👋🏾`;
+ $("todayLabel").textContent=new Date(today()+"T12:00:00").toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric",year:"numeric"});
+ $("studentCount").textContent=students.length;$("staffCount").textContent=staff.length;$("announcementCount").textContent=announcements.length;$("scaleCount").textContent=scaleResponses.filter(r=>!r.reviewed).length;
+}
+$("addStudent").onclick=()=>openStudentForm();
+$("studentClass").onchange=renderStudents;$("studentSearch").oninput=renderStudents;
+function renderStudents(){
+ const cls=$("studentClass").value,q=($("studentSearch").value||"").toLowerCase();
+ const list=students.filter(s=>(!cls||s.grade===cls)&&(!q||`${s.name} ${s.id}`.toLowerCase().includes(q)));
+ $("studentRows").innerHTML=list.map(s=>`<tr><td><strong>${esc(s.id)}</strong></td><td><button class="link-button" onclick="openStudentRecord('${esc(s.id)}')">${esc(s.name)}</button></td><td>${esc(s.grade)}</td><td>${esc(s.parent||"")}</td><td>${esc(s.parentPhone||"")}</td><td><code>${esc(s.password||"")}</code></td><td>${esc(s.status||"Active")}</td><td class="row-actions"><button class="icon-btn" onclick="openStudentForm('${esc(s.id)}')">✏️</button><button class="icon-btn danger" onclick="deleteStudent('${esc(s.id)}')">🗑️</button></td></tr>`).join("")||'<tr><td colspan="8" class="empty">No students in this class.</td></tr>';
+}
+function openStudentForm(id){
+ const s=students.find(x=>x.id===id);
+ const grade=s?.grade||$("studentClass").value||classes[0];
+ openModal(id?"Edit Student":"Add Student",`<form id="studentForm" class="form-grid student-form">
+ <label class="full">Student Full Name<input name="name" value="${esc(s?.name||"")}" required></label>
+ <label>Class<select name="grade">${classes.map(c=>`<option ${c===grade?"selected":""}>${esc(c)}</option>`).join("")}</select></label>
+ <label>Parent / Guardian<input name="parent" value="${esc(s?.parent||"")}" placeholder="Parent or guardian name"></label>
+ <label>Parent Phone Number<input name="parentPhone" value="${esc(s?.parentPhone||"")}" placeholder="Phone number"></label>
+ <label>Sponsor / Class Teacher<select name="sponsor"><option value="">Select staff member</option>${staff.map(t=>{const n=t.name||t.fullName||t.staffName||"";return `<option value="${esc(n)}" ${n===(s?.sponsor||"")?"selected":""}>${esc(n)}</option>`}).join("")}</select></label>
+ <label>Status<select name="status"><option ${s?.status!=="Inactive"?"selected":""}>Active</option><option ${s?.status==="Inactive"?"selected":""}>Inactive</option></select></label>
+ <label class="full">School Year<input name="schoolYear" value="${esc(s?.schoolYear||"2026–2027")}" required></label>
+ <div class="credential-box full"><strong>Portal Login</strong><p>Student ID: <code>${esc(s?.id||"Assigned automatically")}</code></p><p>Password: <code id="newStudentPassword">${esc(s?.password||"Will be generated automatically")}</code></p><small>New students receive a strong password automatically. The ID uses the fixed seven-digit prefix ${BASE_ID} and an alphabetical three-digit suffix.</small></div>
+ <div class="submit-row"><button class="primary" type="submit">${id?"Save Student":"Add Student"}</button></div></form>`);
+ $("studentForm").onsubmit=e=>{
+   e.preventDefault();const f=new FormData(e.target);
+   if(id){Object.assign(s,{name:f.get("name").trim(),grade:f.get("grade"),parent:f.get("parent").trim(),parentPhone:f.get("parentPhone").trim(),sponsor:f.get("sponsor").trim(),status:f.get("status"),schoolYear:f.get("schoolYear").trim()});}
+   else{students.push({id:"",name:f.get("name").trim(),grade:f.get("grade"),parent:f.get("parent").trim(),parentPhone:f.get("parentPhone").trim(),sponsor:f.get("sponsor").trim(),status:f.get("status"),schoolYear:f.get("schoolYear").trim(),password:makePassword()});}
+   assignAlphabeticalIds();save();closeModal();fillSelect("studentClass",classes,$("studentClass").value);renderAll();
+ };
+}
+window.deleteStudent=id=>{const s=students.find(x=>x.id===id);if(!s)return;if(!confirm(`Delete ${s.name}? This removes the student record from this local portal.`))return;students=students.filter(x=>x.id!==id);payments=payments.filter(p=>p.studentId!==id);Object.keys(gradesData).filter(k=>k.startsWith(id+"|")).forEach(k=>delete gradesData[k]);assignAlphabeticalIds();save();renderAll()};
+window.openStudentRecord=id=>{const s=students.find(x=>x.id===id);if(!s)return;openModal(`${s.name} — Student Record`,`<div class="record-grid"><div><strong>Student ID</strong><span>${esc(s.id)}</span></div><div><strong>Class</strong><span>${esc(s.grade)}</span></div><div><strong>Parent / Guardian</strong><span>${esc(s.parent||"")}</span></div><div><strong>Parent Phone</strong><span>${esc(s.parentPhone||"")}</span></div><div><strong>Sponsor / Class Teacher</strong><span>${esc(s.sponsor||"—")}</span></div><div><strong>Portal Password</strong><span><code>${esc(s.password)}</code></span></div><div><strong>School Year</strong><span>${esc(s.schoolYear||"")}</span></div></div><div class="sheet-toolbar"><button class="secondary" onclick="openStudentForm('${esc(s.id)}')">Edit Student</button></div>`);};
+
+$("gradeClass").onchange=renderGrades;$("gradeSemester").onchange=renderGrades;$("gradeSubject").onchange=renderGrades;$("saveAllGrades").onclick=saveGradeSheet;
+function renderGrades(){
+ fillSelect("gradeSubject",subjects,$("gradeSubject").value||subjects[0]);
+ const cls=$("gradeClass").value,sem=$("gradeSemester").value,period=periods[sem][0];
+ if(!$("gradePeriod")){const wrap=$("gradeSemester").parentElement;const l=document.createElement("label");l.innerHTML=`Period<select id="gradePeriod"></select>`;wrap.parentElement.appendChild(l);}
+ const periodEl=$("gradePeriod");periodEl.innerHTML=periods[sem].map(p=>`<option>${p}</option>`).join(""); if(periodEl.dataset.sem===sem){} else periodEl.value=period;
+ periodEl.dataset.sem=sem;periodEl.onchange=renderGrades;
+ const list=students.filter(s=>s.grade===cls&&s.status!=="Inactive");
+ $("gradeHead").innerHTML=`<tr><th>Student ID</th><th>Student</th>${subjects.map(sub=>`<th>${esc(sub)}</th>`).join("")}<th>Average</th><th>Rank</th><th>Conduct</th></tr>`;
+ const selectedPeriod=periodEl.value;
+ $("gradeSheet").innerHTML=list.map(s=>{const mk=`${s.id}|${sem}|${selectedPeriod}`;const m=reportMeta[mk]||{};return `<tr><td>${esc(s.id)}</td><td><strong>${esc(s.name)}</strong></td>${subjects.map(sub=>{const k=gradeKey(s.id,sub,selectedPeriod);return `<td><input class="sheet-input grade-cell" data-key="${esc(k)}" value="${esc(gradesData[k]??"")}" type="number" min="0" max="100" step="1"></td>`}).join("")}<td><input class="sheet-input report-meta" data-meta="${esc(mk)}" data-field="average" value="${esc(m.average??"")}" type="number" min="0" max="100" step="0.01"></td><td><input class="sheet-input report-meta" data-meta="${esc(mk)}" data-field="rank" value="${esc(m.rank??"")}" type="text" placeholder="e.g. 1st"></td><td><input class="sheet-input report-meta" data-meta="${esc(mk)}" data-field="conduct" value="${esc(m.conduct??"")}" type="text" placeholder="Conduct"></td></tr>`}).join("")||`<tr><td colspan="${subjects.length+5}" class="empty">No students in ${esc(cls)}.</td></tr>`;
+}
+function gradeKey(id,sub,period){return `${id}|${sub}|${period}`;}
+function saveGradeSheet(){
+ document.querySelectorAll(".grade-cell").forEach(i=>{const v=i.value.trim();if(v==="")delete gradesData[i.dataset.key];else gradesData[i.dataset.key]=Math.max(0,Math.min(100,Number(v)))});
+ document.querySelectorAll(".report-meta").forEach(i=>{const key=i.dataset.meta;reportMeta[key]=reportMeta[key]||{};const v=i.value.trim();if(v==="")delete reportMeta[key][i.dataset.field];else reportMeta[key][i.dataset.field]=v;});
+ save();renderGrades();alert("Grade sheet saved.");
+}
+
+function recalcStudentPayments(studentId){
+ const s=students.find(x=>x.id===studentId);if(!s)return;
+ let running=Number(s.tuitionTotal||0);
+ payments.filter(p=>p.studentId===studentId).sort((a,b)=>String(a.date).localeCompare(String(b.date))).forEach(p=>{running=Math.max(0,running-Number(p.amount||0));p.balance=running;});
+}
+$("financeClass").onchange=renderFinanceClass;$("financeSearch").oninput=renderFinanceClass;
+function renderFinanceClass(){
+ students.forEach(s=>recalcStudentPayments(s.id));
+ const cls=$("financeClass").value,q=($("financeSearch").value||"").toLowerCase();
+ const list=students.filter(s=>s.grade===cls&&(!q||`${s.name} ${s.id}`.toLowerCase().includes(q)));
+ $("financeClassRows").innerHTML=list.map(s=>{const rows=payments.filter(p=>p.studentId===s.id);const due=Number(s.tuitionTotal||0),paid=rows.reduce((a,p)=>a+Number(p.amount||0),0),bal=Math.max(0,due-paid);return `<tr><td><button class="link-button" onclick="openFinance('${esc(s.id)}')">${esc(s.name)}</button></td><td>${esc(s.id)}</td><td>${esc(s.grade)}</td><td>$${due.toFixed(2)}</td><td>$${paid.toFixed(2)}</td><td>$${bal.toFixed(2)}</td><td><button class="secondary small" onclick="openFinance('${esc(s.id)}')">Open Sheet</button></td></tr>`}).join("")||'<tr><td colspan="7" class="empty">No students in this class.</td></tr>';
+}
+window.openFinance=id=>{
+ students.forEach(x=>recalcStudentPayments(x.id));save();
+ const s=students.find(x=>x.id===id);if(!s)return;
+ const rows=payments.filter(p=>p.studentId===id);const due=Number(s.tuitionTotal||0),paid=rows.reduce((a,p)=>a+Number(p.amount||0),0),bal=Math.max(0,due-paid);
+ openModal(`${s.name} — Financial Record`,`<div class="finance-summary"><div><span>Total Due</span><strong>$${due.toFixed(2)}</strong></div><div><span>Total Paid</span><strong>$${paid.toFixed(2)}</strong></div><div><span>Balance</span><strong>$${bal.toFixed(2)}</strong></div></div>
+ <div class="sheet-toolbar"><button class="primary" onclick="addPayment('${esc(id)}')">＋ Add Payment</button><label>Total Tuition Due<input id="studentDue" type="number" min="0" step="0.01" value="${due}"></label></div>
+ <div class="table-wrap"><table class="spreadsheet"><thead><tr><th>Date</th><th>Student</th><th>Payment Period / Term</th><th>Amount Paid</th><th>Balance After Payment</th><th>Action</th></tr></thead><tbody>${rows.map((p,i)=>`<tr><td>${esc(p.date)}</td><td>${esc(s.name)}</td><td>${esc(p.period)}</td><td>$${Number(p.amount).toFixed(2)}</td><td>$${Number(p.balance).toFixed(2)}</td><td><button class="icon-btn danger" onclick="deletePayment('${esc(p.id)}','${esc(id)}')">🗑️</button></td></tr>`).join("")||'<tr><td colspan="6" class="empty">No payment records yet.</td></tr>'}</tbody></table></div>
+ <p class="record-note">The payment-period field is intentionally flexible (for example, Term 1, Term 2, installment, or another label) until the school confirms its exact fee schedule.</p>`);
+ $("studentDue").onchange=()=>{s.tuitionTotal=Math.max(0,Number($("studentDue").value||0));save();renderFinanceClass();};
+};
+window.addPayment=id=>{
+ const s=students.find(x=>x.id===id);if(!s)return;
+ openModal(`Add Payment — ${s.name}`,`<form id="paymentForm" class="form-grid student-form"><label>Date<input name="date" type="date" value="${today()}" required></label><label>Payment Period / Term<input name="period" placeholder="e.g. First Term" required></label><label>Amount Paid<input name="amount" type="number" min="0.01" step="0.01" required></label><label class="full">Note (optional)<input name="note" placeholder="Receipt or note"></label><div class="submit-row"><button class="primary" type="submit">Save Payment</button></div></form>`);
+ $("paymentForm").onsubmit=e=>{e.preventDefault();const f=new FormData(e.target),amt=Number(f.get("amount"));if(!amt)return;const oldPaid=payments.filter(p=>p.studentId===id).reduce((a,p)=>a+Number(p.amount||0),0);const due=Number(s.tuitionTotal||0);payments.push({id:Date.now()+"",studentId:id,studentName:s.name,date:f.get("date"),period:f.get("period").trim(),amount:amt,balance:Math.max(0,due-(oldPaid+amt)),note:f.get("note").trim()});recalcStudentPayments(id);save();openFinance(id);renderFinanceClass();};
+};
+window.deletePayment=(pid,sid)=>{if(!confirm("Delete this payment record?"))return;payments=payments.filter(p=>p.id!==pid);recalcStudentPayments(sid);save();openFinance(sid);renderFinanceClass()};
+
+$("examGrade").onchange=renderExams;$("addExamRow").onclick=()=>addExamRow();$("saveExams").onclick=saveExamSheet;
+function renderExams(){const cls=$("examGrade").value;const list=exams.filter(x=>x.grade===cls);$("examSheet").innerHTML=list.map((x,i)=>`<tr data-id="${esc(x.id)}"><td><input class="sheet-input exam-date" type="date" value="${esc(x.date)}"></td><td><input class="sheet-input exam-subject" value="${esc(x.subject)}"></td><td><input class="sheet-input exam-time" value="${esc(x.time)}"></td><td><input class="sheet-input exam-room" value="${esc(x.room)}"></td><td><button class="icon-btn danger" onclick="removeExam('${esc(x.id)}')">🗑️</button></td></tr>`).join("")||'<tr><td colspan="5" class="empty">No exams scheduled for this class.</td></tr>';}
+function addExamRow(){const cls=$("examGrade").value;exams.push({id:Date.now()+"",grade:cls,date:"",subject:"",time:"",room:""});save();renderExams();}
+function saveExamSheet(){document.querySelectorAll("#examSheet tr[data-id]").forEach(tr=>{const x=exams.find(e=>e.id===tr.dataset.id);if(!x)return;x.date=tr.querySelector(".exam-date").value;x.subject=tr.querySelector(".exam-subject").value.trim();x.time=tr.querySelector(".exam-time").value.trim();x.room=tr.querySelector(".exam-room").value.trim()});exams=exams.filter(x=>x.date||x.subject||x.time||x.room);save();renderExams();alert("Examination timetable saved.");}
+window.removeExam=id=>{exams=exams.filter(x=>x.id!==id);save();renderExams()};
+
+function renderAssignments(){$("assignmentList").innerHTML=assignments.map(a=>`<div class="announcement-item"><div><strong>${esc(a.title)}</strong><span>${esc(a.subject||"")} • Due ${esc(a.due||"")} • ${esc(a.audience)}</span><p>${esc(a.body)}</p></div><button class="icon-btn danger" onclick="removeAssignment('${esc(a.id)}')">🗑️</button></div>`).join("")||'<p class="empty">No assignments published.</p>'}
+$("addAssignment").onclick=()=>{const title=$("assignmentTitle").value.trim(),audience=$("assignmentAudience").value,subject=$("assignmentSubject").value.trim(),due=$("assignmentDue").value,body=$("assignmentBody").value.trim();if(!title||!body)return alert("Enter an assignment title and instructions.");assignments.unshift({id:Date.now()+"",title,audience,subject,due,body,date:today()});save();$("assignmentTitle").value="";$("assignmentSubject").value="";$("assignmentDue").value="";$("assignmentBody").value="";renderAssignments()};
+window.removeAssignment=id=>{assignments=assignments.filter(a=>a.id!==id);save();renderAssignments()};
+
+function renderAnnouncements(){$("announcementAdminList").innerHTML=announcements.map(a=>`<div class="announcement-item"><div><strong>${esc(a.title)}</strong><span>${esc(a.date)} • ${esc(a.audience)}</span><p>${esc(a.body)}</p></div><button class="icon-btn danger" onclick="removeAnnouncement('${esc(a.id)}')">🗑️</button></div>`).join("")||'<p class="empty">No announcements published.</p>'}
+$("addAnnouncement").onclick=()=>{const title=$("announcementTitle").value.trim(),date=$("announcementDate").value,audience=$("announcementAudience").value,body=$("announcementBody").value.trim();if(!title||!date||!body)return alert("Complete the announcement.");announcements.unshift({id:Date.now()+"",title,date,audience,body});save();$("announcementTitle").value="";$("announcementBody").value="";renderAnnouncements();renderHome()};
+window.removeAnnouncement=id=>{announcements=announcements.filter(a=>a.id!==id);save();renderAnnouncements();renderHome()};
+
+function renderScale(){$("scaleList").innerHTML=scaleResponses.slice().reverse().map(r=>`<div class="feedback-item"><div><strong>${esc(r.studentName||"Student")}</strong><span>${esc(r.date||"")} • ${esc(r.studentGrade||"")}</span><p>${esc((r.checks||[]).join(" • "))}</p>${r.note?`<p>${esc(r.note)}</p>`:""}</div><button class="icon-btn" onclick="markScaleReviewed('${esc(r.id)}')">${r.reviewed?"✓ Reviewed":"Mark reviewed"}</button></div>`).join("")||'<p class="empty">No Scale Your Child responses yet.</p>'}
+window.markScaleReviewed=id=>{const r=scaleResponses.find(x=>x.id===id);if(r)r.reviewed=!r.reviewed;save();renderScale();renderHome()};
+
+function renderSuggestions(){$("suggestionList").innerHTML=suggestions.map(s=>`<div class="announcement-item"><div><strong>${esc(s.title)}</strong><span>To: ${esc(s.audience)} • ${esc(s.date)} • By ${esc(s.by)}</span><p>${esc(s.body)}</p></div><button class="icon-btn danger" onclick="removeSuggestion('${esc(s.id)}')">🗑️</button></div>`).join("")||'<p class="empty">No suggestions sent.</p>'}
+$("addSuggestion").onclick=()=>{const audience=$("suggestionAudience").value,title=$("suggestionTitle").value.trim(),body=$("suggestionBody").value.trim();if(!title||!body)return alert("Enter a title and message.");suggestions.unshift({id:Date.now()+"",audience,title,body,date:today(),by:currentAdmin.name});save();$("suggestionTitle").value="";$("suggestionBody").value="";renderSuggestions()};
+window.removeSuggestion=id=>{suggestions=suggestions.filter(s=>s.id!==id);save();renderSuggestions()};
+
+$("staffDate").onchange=renderStaff;
+$("addStaff").onclick=()=>openStaffForm();
+function renderStaff(){
+ const date=$("staffDate").value||today();
+ $("staffRows").innerHTML=staff.map(s=>{const rec=staffAttendance.find(r=>r.staffId===s.id&&r.date===date);return `<tr><td><strong>${esc(s.name)}</strong></td><td>${esc(s.position)}</td><td><select class="staff-status" data-id="${esc(s.id)}"><option value="present" ${rec?.status==="present"?"selected":""}>Present</option><option value="absent" ${rec?.status==="absent"?"selected":""}>Absent</option></select></td><td>${esc(rec?.time||"—")}</td><td><button class="secondary small" onclick="saveStaffStatus('${esc(s.id)}')">Save</button> <button class="icon-btn" onclick="openStaffForm('${esc(s.id)}')">✏️</button><button class="icon-btn danger" onclick="deleteStaff('${esc(s.id)}')">🗑️</button></td></tr>`}).join("")||'<tr><td colspan="5" class="empty">No staff or teachers added yet.</td></tr>';
+}
+window.saveStaffStatus=id=>{const date=$("staffDate").value||today(),status=document.querySelector(`.staff-status[data-id="${CSS.escape(id)}"]`).value,s=staff.find(x=>x.id===id);if(!s)return;staffAttendance=staffAttendance.filter(r=>!(r.staffId===id&&r.date===date));staffAttendance.push({staffId:id,date,status,time:status==="present"?new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):""});save();renderStaff()};
+function openStaffForm(id){
+ const s=staff.find(x=>x.id===id);
+ openModal(id?"Edit Staff / Teacher":"Add Staff / Teacher",`<form id="staffForm" class="form-grid student-form"><label class="full">Full Name<input name="name" value="${esc(s?.name||"")}" required></label><label>Position<input name="position" value="${esc(s?.position||"")}" placeholder="Teacher, Principal, Secretary..." required></label><label>Phone<input name="phone" value="${esc(s?.phone||"")}" placeholder="Phone number"></label><div class="submit-row"><button class="primary" type="submit">${id?"Save":"Add Staff"}</button></div></form>`);
+ $("staffForm").onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);if(id)Object.assign(s,{name:f.get("name").trim(),position:f.get("position").trim(),phone:f.get("phone").trim()});else staff.push({id:"STAFF-"+Date.now(),name:f.get("name").trim(),position:f.get("position").trim(),phone:f.get("phone").trim()});save();closeModal();renderAll()};
+}
+window.deleteStaff=id=>{const s=staff.find(x=>x.id===id);if(!s)return;if(confirm(`Delete ${s.name} from staff?`)){staff=staff.filter(x=>x.id!==id);staffAttendance=staffAttendance.filter(r=>r.staffId!==id);save();renderAll()}};
+
+function openModal(title,html){$("modalTitle").textContent=title;$("modalBody").innerHTML=html;$("modal").classList.remove("hidden")}
+function closeModal(){$("modal").classList.add("hidden")}
+$("closeModal").onclick=closeModal;$("modal").onclick=e=>{if(e.target.id==="modal")closeModal()};
+(function(){const menu=$("mobileMenu"),sidebar=document.querySelector(".sidebar"),overlay=$("sidebarOverlay");if(!menu||!sidebar||!overlay)return;function close(){sidebar.classList.remove("mobile-open");overlay.classList.remove("show");menu.setAttribute("aria-expanded","false")}menu.onclick=()=>{const open=sidebar.classList.toggle("mobile-open");overlay.classList.toggle("show",open);menu.setAttribute("aria-expanded",String(open))};overlay.onclick=close;sidebar.querySelectorAll("button").forEach(btn=>btn.addEventListener("click",()=>{if(btn!==menu)close()}))})();
+// Administrator profile ID-card upload (stored locally until Supabase Storage is connected)
+function loadAdminIdCard(){
+ const key=`vfaAdminIdCard:${currentAdmin?.id||""}`; const data=localStorage.getItem(key); const preview=$("adminIdCardPreview"); if(!preview)return;
+ preview.innerHTML=data?`<img src="${data}" alt="Administrator ID card">`:"<p class=\"muted\">No ID card uploaded.</p>";
+ if($("adminProfileName"))$("adminProfileName").textContent=currentAdmin?.name||"";
+ if($("adminProfileId"))$("adminProfileId").textContent=currentAdmin?.id||"";
+ if($("adminProfileRole"))$("adminProfileRole").textContent=currentAdmin?.role||"";
+ if($("adminProfilePosition"))$("adminProfilePosition").textContent=currentAdmin?.position||"";
+}
+function bindAdminIdCard(){
+ $("adminIdCardInput")?.addEventListener("change",e=>{const file=e.target.files?.[0];if(!file)return;if(!file.type.startsWith("image/")){ $("adminIdCardMessage").textContent="Please choose an image file.";return;}const reader=new FileReader();reader.onload=()=>{localStorage.setItem(`vfaAdminIdCard:${currentAdmin.id}`,reader.result);$("adminIdCardMessage").textContent="ID card uploaded.";loadAdminIdCard();};reader.readAsDataURL(file);});
+ $("removeAdminIdCard")?.addEventListener("click",()=>{localStorage.removeItem(`vfaAdminIdCard:${currentAdmin.id}`);$("adminIdCardInput").value="";$("adminIdCardMessage").textContent="ID card removed.";loadAdminIdCard();});
+ loadAdminIdCard();
+}
+const _origStaffLogin=$("staffLoginForm").onsubmit;
+$("staffLoginForm").onsubmit=e=>{_origStaffLogin(e);if(currentAdmin){setTimeout(bindAdminIdCard,0)}};
