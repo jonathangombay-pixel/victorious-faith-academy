@@ -10,11 +10,11 @@ const periods={first:["1st Period","2nd Period","3rd Period","Exam"],second:["4t
 const get=(k,d)=>{try{const v=JSON.parse(localStorage.getItem(k));return v??d}catch{return d}};
 let students=get("vfaAdminStudents",[]);
 let payments=get("vfaAdminPayments",[]);
-// Remove legacy demo records from older portal builds.
-const legacyIds=["0020172(001)","0020172(002)","0020172(003)","0020172(004)"];
+// Do not remove real students based on their automatically assigned IDs.
+// Only explicitly named legacy demo records are filtered out.
 const legacyNames=["Andrew Johnson","Michael Smith","Sarah Williams"];
-students=students.filter(s=>!legacyIds.includes(s.id)&&!legacyNames.includes(s.name));
-payments=payments.filter(p=>!legacyIds.includes(p.studentId));
+students=students.filter(s=>!legacyNames.includes(s.name));
+payments=payments.filter(p=>!legacyNames.includes(p.studentName||""));
 let gradesData=get("vfaGrades",{});
 let exams=get("vfaExams",[]);
 let assignments=get("vfaAssignments",[]);
@@ -53,6 +53,7 @@ function assignAlphabeticalIds(){
  if(Object.keys(map).length){
    payments.forEach(p=>{if(map[p.studentId])p.studentId=map[p.studentId];});
    const nextGrades={};Object.entries(gradesData).forEach(([k,v])=>{const old=k.split("|")[0];nextGrades[(map[old]||old)+k.slice(old.length)]=v;});gradesData=nextGrades;
+   const nextMeta={};Object.entries(reportMeta).forEach(([k,v])=>{const old=k.split("|")[0];nextMeta[(map[old]||old)+k.slice(old.length)]=v;});reportMeta=nextMeta;
    scaleResponses.forEach(r=>{if(map[r.studentId])r.studentId=map[r.studentId];});
    const logged=get("loggedInStudent",null);if(logged&&map[logged.id]){logged.id=map[logged.id];localStorage.setItem("loggedInStudent",JSON.stringify(logged));}
  }
@@ -113,13 +114,20 @@ function openStudentForm(id){
  <label>Sponsor / Class Teacher<select name="sponsor"><option value="">Select staff member</option>${staff.map(t=>{const n=t.name||t.fullName||t.staffName||"";return `<option value="${esc(n)}" ${n===(s?.sponsor||"")?"selected":""}>${esc(n)}</option>`}).join("")}</select></label>
  <label>Status<select name="status"><option ${s?.status!=="Inactive"?"selected":""}>Active</option><option ${s?.status==="Inactive"?"selected":""}>Inactive</option></select></label>
  <label class="full">School Year<input name="schoolYear" value="${esc(s?.schoolYear||"2026–2027")}" required></label>
+ <label class="full">ID Card Upload<div class="student-id-upload-box"><input id="studentIdCardUpload" name="idCard" type="file" accept="image/*"><small>Upload this student's ID card. The image will appear in the student's Profile tab.</small><div id="studentIdCardUploadPreview" class="student-id-upload-preview"></div></div></label>
  <div class="credential-box full"><strong>Portal Login</strong><p>Student ID: <code>${esc(s?.id||"Assigned automatically")}</code></p><p>Password: <code id="newStudentPassword">${esc(s?.password||"Will be generated automatically")}</code></p><small>New students receive a strong password automatically. The ID uses the fixed seven-digit prefix ${BASE_ID} and an alphabetical three-digit suffix.</small></div>
  <div class="submit-row"><button class="primary" type="submit">${id?"Save Student":"Add Student"}</button></div></form>`);
  $("studentForm").onsubmit=e=>{
    e.preventDefault();const f=new FormData(e.target);
-   if(id){Object.assign(s,{name:f.get("name").trim(),grade:f.get("grade"),parent:f.get("parent").trim(),parentPhone:f.get("parentPhone").trim(),sponsor:f.get("sponsor").trim(),status:f.get("status"),schoolYear:f.get("schoolYear").trim()});}
-   else{students.push({id:"",name:f.get("name").trim(),grade:f.get("grade"),parent:f.get("parent").trim(),parentPhone:f.get("parentPhone").trim(),sponsor:f.get("sponsor").trim(),status:f.get("status"),schoolYear:f.get("schoolYear").trim(),password:makePassword()});}
-   assignAlphabeticalIds();save();closeModal();fillSelect("studentClass",classes,$("studentClass").value);renderAll();
+   const file=f.get("idCard");
+   const finish=()=>{assignAlphabeticalIds();save();closeModal();fillSelect("studentClass",classes,$("studentClass").value);renderAll();};
+   const applyCard=(target)=>{
+     if(file && file.size && file.type.startsWith("image/")){const reader=new FileReader();reader.onload=()=>{target.idCard=reader.result;finish();};reader.readAsDataURL(file);}
+     else finish();
+   };
+   if(id){Object.assign(s,{name:f.get("name").trim(),grade:f.get("grade"),parent:f.get("parent").trim(),parentPhone:f.get("parentPhone").trim(),sponsor:f.get("sponsor").trim(),status:f.get("status"),schoolYear:f.get("schoolYear").trim()});applyCard(s);}
+   else{const ns={id:"",name:f.get("name").trim(),grade:f.get("grade"),parent:f.get("parent").trim(),parentPhone:f.get("parentPhone").trim(),sponsor:f.get("sponsor").trim(),status:f.get("status"),schoolYear:f.get("schoolYear").trim(),password:makePassword(),idCard:""};students.push(ns);applyCard(ns);}
+
  };
 }
 window.deleteStudent=id=>{const s=students.find(x=>x.id===id);if(!s)return;if(!confirm(`Delete ${s.name}? This removes the student record from this local portal.`))return;students=students.filter(x=>x.id!==id);payments=payments.filter(p=>p.studentId!==id);Object.keys(gradesData).filter(k=>k.startsWith(id+"|")).forEach(k=>delete gradesData[k]);assignAlphabeticalIds();save();renderAll()};

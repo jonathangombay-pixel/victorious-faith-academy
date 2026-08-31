@@ -35,12 +35,11 @@ function openTab(id){document.querySelectorAll(".tab-page").forEach(p=>p.classLi
 $("logout").onclick=()=>{localStorage.removeItem("loggedInStudent");location.href="index.html"};
 (function(){const menu=$("mobileMenu"),sidebar=document.querySelector(".sidebar"),overlay=$("sidebarOverlay");if(!menu||!sidebar||!overlay)return;function close(){sidebar.classList.remove("mobile-open");overlay.classList.remove("show");menu.setAttribute("aria-expanded","false")}menu.onclick=()=>{const open=sidebar.classList.toggle("mobile-open");overlay.classList.toggle("show",open);menu.setAttribute("aria-expanded",String(open))};overlay.onclick=close;sidebar.querySelectorAll("button").forEach(btn=>btn.addEventListener("click",()=>{if(btn!==menu)close()}));})();
 
-// Profile ID-card upload (stored locally until Supabase Storage is connected)
+// Student ID card is uploaded by an administrator and is view-only here.
 function loadStudentIdCard(){
- const key=`vfaStudentIdCard:${fresh.id}`; const data=localStorage.getItem(key); const preview=$("studentIdCardPreview"); if(!preview)return;
- preview.innerHTML=data?`<img src="${data}" alt="Student ID card">`:"<p class=\"muted\">No ID card uploaded.</p>";
+ const preview=$("studentIdCardPreview"); if(!preview)return;
+ const data=fresh.idCard||"";
+ preview.innerHTML=data?`<img src="${data}" alt="Student ID card">`:`<p class="muted">No ID card has been uploaded yet.</p>`;
 }
-$("studentIdCardInput")?.addEventListener("change",e=>{const file=e.target.files?.[0];if(!file)return;if(!file.type.startsWith("image/")){ $("studentIdCardMessage").textContent="Please choose an image file.";return;} const reader=new FileReader();reader.onload=()=>{localStorage.setItem(`vfaStudentIdCard:${fresh.id}`,reader.result);$("studentIdCardMessage").textContent="ID card uploaded.";loadStudentIdCard();};reader.readAsDataURL(file);});
-$("removeStudentIdCard")?.addEventListener("click",()=>{localStorage.removeItem(`vfaStudentIdCard:${fresh.id}`);$("studentIdCardInput").value="";$("studentIdCardMessage").textContent="ID card removed.";loadStudentIdCard();});
 loadStudentIdCard();
 }
