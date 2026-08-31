@@ -7,6 +7,7 @@ const BASE_ID="0020172";
 const classes=["Day Care","Nursery 1","Nursery 2","Kindergarten",...Array.from({length:9},(_,i)=>`Grade ${i+1}`)];
 const subjects=["Mathematics","English Language","Science","Social Studies","ICT","Biology","Chemistry","Physics"];
 const periods={first:["1st Period","2nd Period","3rd Period","Exam"],second:["4th Period","5th Period","6th Period","Exam"]};
+let classRows=[],subjectRows=[],periodRows=[];
 const get=(k,d)=>{try{const v=JSON.parse(localStorage.getItem(k));return v??d}catch{return d}};
 let students=get("vfaAdminStudents",[]);
 let payments=get("vfaAdminPayments",[]);
@@ -79,16 +80,20 @@ function init(){
 function renderAll(){
  renderHome();renderStudents();renderGrades();renderFinanceClass();renderExams();renderAssignments();renderAnnouncements();renderScale();renderSuggestions();renderStaff();
 }
-$("staffLoginForm").onsubmit=e=>{
+$("staffLoginForm").onsubmit=async e=>{
  e.preventDefault();const id=$("staffId").value.trim(),pw=$("staffPassword").value;
- currentAdmin=ADMIN_ACCOUNTS.find(a=>a.id===id&&a.password===pw);
+ currentAdmin=ADMIN_ACCOUNTS.find(a=>a.id===id);
  if(!currentAdmin){$("loginMessage").textContent="Incorrect Admin ID or password.";return}
+ $("loginMessage").textContent="Signing in…";
+ const {error}=await vfaSupabase.auth.signInWithPassword({email:currentAdmin.email,password:pw});
+ if(error){$("loginMessage").textContent="Incorrect Admin ID or password.";currentAdmin=null;return;}
+ try{await loadVfaRemote();}catch(err){console.error(err);$("loginMessage").textContent="Signed in, but the school database could not be loaded. Check your Supabase setup.";return;}
  $("loginView").classList.add("hidden");$("adminApp").classList.remove("hidden");
  $("staffPill").textContent=`${currentAdmin.name} • ${currentAdmin.role}`;
  init();
 };
 $("toggleStaffPassword").onclick=()=>{$("staffPassword").type=$("staffPassword").type==="password"?"text":"password"};
-$("staffLogout").onclick=()=>{currentAdmin=null;$("adminApp").classList.add("hidden");$("loginView").classList.remove("hidden");$("staffId").value="";$("staffPassword").value=""};
+$("staffLogout").onclick=async()=>{await vfaSupabase.auth.signOut();currentAdmin=null;$("adminApp").classList.add("hidden");$("loginView").classList.remove("hidden");$("staffId").value="";$("staffPassword").value=""};
 document.querySelectorAll(".nav").forEach(b=>b.onclick=()=>openSection(b.dataset.section));
 function openSection(id){document.querySelectorAll(".section").forEach(s=>s.classList.remove("active"));$(id).classList.add("active");document.querySelectorAll(".nav").forEach(b=>b.classList.toggle("active",b.dataset.section===id));$("sectionTitle").textContent={overview:"Home",students:"Students",grades:"Report Cards",tuition:"Financial Records",exams:"Examination Timetable",assignments:"Assignments",announcements:"Announcements",scale:"Scale Your Child",suggestions:"Admin Suggestions",staff:"Staff / Teacher Attendance"}[id]||"Home";window.scrollTo({top:0,behavior:"smooth"});}
 function renderHome(){
@@ -220,6 +225,52 @@ function openModal(title,html){$("modalTitle").textContent=title;$("modalBody").
 function closeModal(){$("modal").classList.add("hidden")}
 $("closeModal").onclick=closeModal;$("modal").onclick=e=>{if(e.target.id==="modal")closeModal()};
 (function(){const menu=$("mobileMenu"),sidebar=document.querySelector(".sidebar"),overlay=$("sidebarOverlay");if(!menu||!sidebar||!overlay)return;function close(){sidebar.classList.remove("mobile-open");overlay.classList.remove("show");menu.setAttribute("aria-expanded","false")}menu.onclick=()=>{const open=sidebar.classList.toggle("mobile-open");overlay.classList.toggle("show",open);menu.setAttribute("aria-expanded",String(open))};overlay.onclick=close;sidebar.querySelectorAll("button").forEach(btn=>btn.addEventListener("click",()=>{if(btn!==menu)close()}))})();
+
+/* ================= SUPABASE DATA BRIDGE ================= */
+async function loadVfaRemote(){
+ const {data:admins,error:ae}=await vfaSupabase.from('admin_profiles').select('*').eq('auth_user_id',(await vfaSupabase.auth.getUser()).data.user.id).limit(1);
+ if(ae) throw ae;
+ if(admins?.[0]) currentAdmin={...currentAdmin,name:admins[0].full_name,role:admins[0].role};
+ const {data:classesDb,error:ce}=await vfaSupabase.from('classes').select('*').order('sort_order'); if(ce)throw ce;
+ const classById=Object.fromEntries(classesDb.map(x=>[x.id,x.name]));
+ const {data:staffDb,error:se}=await vfaSupabase.from('staff').select('*').order('full_name'); if(se)throw se;
+ staff=staffDb.map(x=>({dbId:x.id,id:x.id,name:x.full_name,position:x.position||'',phone:x.phone||''}));
+ const {data:studentsDb,error:ste}=await vfaSupabase.from('students').select('*').order('full_name'); if(ste)throw ste;
+ students=studentsDb.map(x=>({dbId:x.id,id:x.student_code||'',name:x.full_name,grade:classById[x.class_id]||'',parent:x.parent_name||'',parentPhone:x.parent_phone||'',sponsor:(staff.find(t=>t.id===x.sponsor_id)||{}).name||'',sponsorId:x.sponsor_id||'',status:x.is_active?'Active':'Inactive',schoolYear:x.school_year||'',password:'',idCard:x.id_card_path||'',auth_user_id:x.auth_user_id,tuitionTotal:0}));
+ const {data:subs}=await vfaSupabase.from('subjects').select('*'); const {data:pers}=await vfaSupabase.from('academic_periods').select('*');
+ const {data:gr}=await vfaSupabase.from('grades').select('*'); const {data:meta}=await vfaSupabase.from('student_period_results').select('*');
+ const subById=Object.fromEntries((subs||[]).map(x=>[x.id,x.name])); const perById=Object.fromEntries((pers||[]).map(x=>[x.id,x.period_name])); const byDb=Object.fromEntries(students.map(x=>[x.dbId,x]));
+ gradesData={};(gr||[]).forEach(x=>{const st=byDb[x.student_id];if(st)gradesData[`${st.id}|${subById[x.subject_id]}|${perById[x.period_id]}`]=x.score;});
+ reportMeta={};(meta||[]).forEach(x=>{const st=byDb[x.student_id],p=pers?.find(y=>y.id===x.period_id);if(st&&p){const sem=p.semester===2?'second':'first';reportMeta[`${st.id}|${sem}|${p.period_name}`]={average:x.average,rank:x.rank,conduct:x.conduct||''};}});
+ return true;
+}
+async function syncVfaStudents(){
+ for(const s of students){
+  const cls=classRows?.find(c=>c.name===s.grade)||null;
+  const sponsor=staff.find(t=>t.name===s.sponsor)||null;
+  if(!s.dbId){
+   if(!s.password) throw new Error('A new student needs a generated password before saving.');
+   const adminSession=(await vfaSupabase.auth.getSession()).data.session;
+   const email=`${s.id.toLowerCase().replace(/[^a-z0-9]/g,'')}@students.vfa-portal.local`;
+   const {data,error}=await vfaSupabase.auth.signUp({email,password:s.password,options:{data:{portal_role:'student',student_code:s.id}}});
+   if(error) throw error;
+   s.auth_user_id=data.user?.id||null;
+   if(adminSession) await vfaSupabase.auth.setSession({access_token:adminSession.access_token,refresh_token:adminSession.refresh_token});
+   const {data:row,error:e}=await vfaSupabase.from('students').insert({full_name:s.name,student_code:s.id,class_id:cls?.id||null,sponsor_id:sponsor?.id||null,parent_name:s.parent||null,parent_phone:s.parentPhone||null,school_year:s.schoolYear||null,auth_user_id:s.auth_user_id,is_active:s.status!=='Inactive'}).select().single();
+   if(e)throw e;s.dbId=row.id;
+  }else{
+   const {error}=await vfaSupabase.from('students').update({full_name:s.name,student_code:s.id,class_id:cls?.id||null,sponsor_id:sponsor?.id||null,parent_name:s.parent||null,parent_phone:s.parentPhone||null,school_year:s.schoolYear||null,is_active:s.status!=='Inactive'}).eq('id',s.dbId);if(error)throw error;
+  }
+ }
+}
+async function syncVfaGrades(){
+ const subs=subjectRows.length?subjectRows:await vfaSupabase.from('subjects').select('*').then(r=>r.data||[]); const pers=periodRows.length?periodRows:await vfaSupabase.from('academic_periods').select('*').then(r=>r.data||[]);
+ subjectRows=subs;periodRows=pers;const sb=Object.fromEntries(subs.map(x=>[x.name,x]));const pb=Object.fromEntries(pers.map(x=>[x.period_name,x]));const by=Object.fromEntries(students.map(x=>[x.id,x]));
+ const rows=[];for(const [k,v] of Object.entries(gradesData)){const [sid,sub,per]=k.split('|'),st=by[sid];if(st?.dbId&&sb[sub]?.id&&pb[per]?.id&&v!=='')rows.push({student_id:st.dbId,subject_id:sb[sub].id,period_id:pb[per].id,score:Number(v)});} if(rows.length){const {error}=await vfaSupabase.from('grades').upsert(rows,{onConflict:'student_id,subject_id,period_id'});if(error)throw error;}
+ const metaRows=[];for(const [k,m] of Object.entries(reportMeta)){const [sid,sem,per]=k.split('|'),st=by[sid],p=pb[per];if(st?.dbId&&p?.id&&m&&(m.average!==undefined||m.rank!==undefined||m.conduct!==undefined))metaRows.push({student_id:st.dbId,period_id:p.id,average:m.average===''?null:Number(m.average),rank:m.rank===''?null:Number(m.rank),conduct:m.conduct||null});} if(metaRows.length){const {error}=await vfaSupabase.from('student_period_results').upsert(metaRows,{onConflict:'student_id,period_id'});if(error)throw error;}
+}
+const oldSave=save;
+save=function(){oldSave();syncVfaStudents().then(syncVfaGrades).catch(err=>{console.error('Supabase save failed:',err);alert('Supabase save failed: '+err.message);});};
 // Administrator profile ID-card upload (stored locally until Supabase Storage is connected)
 function loadAdminIdCard(){
  const key=`vfaAdminIdCard:${currentAdmin?.id||""}`; const data=localStorage.getItem(key); const preview=$("adminIdCardPreview"); if(!preview)return;
