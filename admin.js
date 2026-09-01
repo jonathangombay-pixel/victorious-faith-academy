@@ -1,27 +1,32 @@
 const ADMIN_ACCOUNTS=[
-{id:"VFA-OWNER",password:"VFAOwner2026!",name:"School Owner",role:"Owner",position:"School Owner",department:"Administration"},
-{id:"VFA-ASSISTANT",password:"VFAAssist2026!",name:"School Assistant",role:"Assistant",position:"School Assistant",department:"Administration"},
-{id:"VFA-JONATHAN",password:"VFAJonathan2026!",name:"Jonathan Gombay",role:"Administrator",position:"Administrator",department:"Administration"}
+{id:"VFA-OWNER",email:"bishop.andrew@your-school-domain.com",password:"VFAOwner2026!",name:"Bishop Andrew Gombay Sr",role:"Owner",position:"School Owner",department:"Administration"},
+{id:"VFA-ASSISTANT",email:"jue.carmo@your-school-domain.com",password:"VFAAssist2026!",name:"Jue Carmo",role:"Assistant",position:"School Assistant",department:"Administration"},
+{id:"VFA-JONATHAN",email:"jonathangombay@gmail.com",password:"VFAJonathan2026!",name:"Jonathan",role:"Administrator",position:"Administrator",department:"Administration"}
 ];
 const BASE_ID="0020172";
 const classes=["Day Care","Nursery 1","Nursery 2","Kindergarten",...Array.from({length:9},(_,i)=>`Grade ${i+1}`)];
 const subjects=["Mathematics","English Language","Science","Social Studies","ICT","Biology","Chemistry","Physics"];
 const periods={first:["1st Period","2nd Period","3rd Period","Exam"],second:["4th Period","5th Period","6th Period","Exam"]};
 let classRows=[],subjectRows=[],periodRows=[];
+// One-time cleanup of legacy browser-stored school/demo records.
+// Supabase is the source of truth for the migrated records.
+const VFA_CLEANUP_VERSION="2026-08-31-clean-1";
+if(localStorage.getItem("vfaCleanupVersion")!==VFA_CLEANUP_VERSION){
+  ["vfaAdminStudents","vfaAdminPayments","vfaGrades","vfaExams","vfaAssignments","vfaAdminAnnouncements","vfaAdminSuggestions","vfaScaleResponses","vfaStaff","vfaStaffAttendance","vfaReportMeta"].forEach(k=>localStorage.removeItem(k));
+  localStorage.setItem("vfaCleanupVersion",VFA_CLEANUP_VERSION);
+}
 const get=(k,d)=>{try{const v=JSON.parse(localStorage.getItem(k));return v??d}catch{return d}};
-let students=get("vfaAdminStudents",[]);
+let students=[];
+let pendingStudentIds=new Set();
 let payments=get("vfaAdminPayments",[]);
-// Do not remove real students based on their automatically assigned IDs.
-// Only explicitly named legacy demo records are filtered out.
-const legacyNames=["Andrew Johnson","Michael Smith","Sarah Williams"];
-students=students.filter(s=>!legacyNames.includes(s.name));
-payments=payments.filter(p=>!legacyNames.includes(p.studentName||""));
+payments=payments.filter(p=>p && p.studentId);
 let gradesData=get("vfaGrades",{});
 let exams=get("vfaExams",[]);
 let assignments=get("vfaAssignments",[]);
 let announcements=get("vfaAdminAnnouncements",[]);
 let suggestions=get("vfaAdminSuggestions",[]);
 let scaleResponses=get("vfaScaleResponses",[]);
+let scaleStatements=["Shows good effort","Completes assignments","Participates in class","Works well with others","Needs additional academic support"];
 let staff=get("vfaStaff",[]);
 let staffAttendance=get("vfaStaffAttendance",[]);
 let reportMeta=get("vfaReportMeta",{});
@@ -30,7 +35,6 @@ const $=id=>document.getElementById(id);
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]));
 const today=()=>new Date().toISOString().slice(0,10);
 function save(){
- localStorage.setItem("vfaAdminStudents",JSON.stringify(students));
  localStorage.setItem("vfaAdminPayments",JSON.stringify(payments));
  localStorage.setItem("vfaGrades",JSON.stringify(gradesData));
  localStorage.setItem("vfaExams",JSON.stringify(exams));
@@ -48,16 +52,23 @@ function makePassword(){
 }
 function sortStudents(){students.sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:"base"}));}
 function assignAlphabeticalIds(){
- const oldIds=students.map(s=>s.id);
+ const before=students.map(s=>({ref:s,old:s.id||""}));
  sortStudents();
- const map={};students.forEach((s,i)=>{const old=s.id||"";const next=`${BASE_ID}(${String(i+1).padStart(3,"0")})`;if(old&&old!==next)map[old]=next;s.id=next;});
- if(Object.keys(map).length){
-   payments.forEach(p=>{if(map[p.studentId])p.studentId=map[p.studentId];});
-   const nextGrades={};Object.entries(gradesData).forEach(([k,v])=>{const old=k.split("|")[0];nextGrades[(map[old]||old)+k.slice(old.length)]=v;});gradesData=nextGrades;
-   const nextMeta={};Object.entries(reportMeta).forEach(([k,v])=>{const old=k.split("|")[0];nextMeta[(map[old]||old)+k.slice(old.length)]=v;});reportMeta=nextMeta;
-   scaleResponses.forEach(r=>{if(map[r.studentId])r.studentId=map[r.studentId];});
-   const logged=get("loggedInStudent",null);if(logged&&map[logged.id]){logged.id=map[logged.id];localStorage.setItem("loggedInStudent",JSON.stringify(logged));}
+ const changes={};
+ students.forEach((s,i)=>{
+   const next=`${BASE_ID}(${String(i+1).padStart(3,"0")})`;
+   const old=s.id||"";
+   if(old && old!==next) changes[old]=next;
+   s.id=next;
+ });
+ if(Object.keys(changes).length){
+   payments.forEach(p=>{if(changes[p.studentId])p.studentId=changes[p.studentId];});
+   const nextGrades={};Object.entries(gradesData).forEach(([k,v])=>{const old=k.split("|")[0];nextGrades[(changes[old]||old)+k.slice(old.length)]=v;});gradesData=nextGrades;
+   const nextMeta={};Object.entries(reportMeta).forEach(([k,v])=>{const old=k.split("|")[0];nextMeta[(changes[old]||old)+k.slice(old.length)]=v;});reportMeta=nextMeta;
+   scaleResponses.forEach(r=>{if(changes[r.studentId])r.studentId=changes[r.studentId];});
+   const logged=get("loggedInStudent",null);if(logged&&changes[logged.id]){logged.id=changes[logged.id];localStorage.setItem("loggedInStudent",JSON.stringify(logged));}
  }
+ return changes;
 }
 function fillSelect(id,items,selected){
  const el=$(id); if(!el)return;
@@ -65,10 +76,11 @@ function fillSelect(id,items,selected){
  if(selected && items.includes(selected))el.value=selected;
 }
 function init(){
- students.forEach(s=>{if(!s.password)s.password=makePassword();});
+ // Passwords are assigned only once for newly created students. Remote students load their stored password.
+ students.forEach(s=>{if(!s.dbId && !s.password)s.password=makePassword();});
  if(students.length)assignAlphabeticalIds();
  if(!students.length) localStorage.removeItem("vfaAdminStudents");
- fillSelect("studentClass",classes);
+ fillSelect("studentClass",["All Classes",...classes],"All Classes");
  fillSelect("gradeClass",classes); fillSelect("financeClass",classes); fillSelect("examGrade",classes);
  fillSelect("assignmentAudience",["All Students",...classes]);
  fillSelect("announcementAudience",["All Students",...classes]);
@@ -79,6 +91,7 @@ function init(){
 }
 function renderAll(){
  renderHome();renderStudents();renderGrades();renderFinanceClass();renderExams();renderAssignments();renderAnnouncements();renderScale();renderSuggestions();renderStaff();
+ loadScaleStatements();
 }
 $("staffLoginForm").onsubmit=async e=>{
  e.preventDefault();const id=$("staffId").value.trim(),pw=$("staffPassword").value;
@@ -102,10 +115,24 @@ function renderHome(){
  $("studentCount").textContent=students.length;$("staffCount").textContent=staff.length;$("announcementCount").textContent=announcements.length;$("scaleCount").textContent=scaleResponses.filter(r=>!r.reviewed).length;
 }
 $("addStudent").onclick=()=>openStudentForm();
+$("saveStudents").onclick=async()=>{
+  try{
+    if(!students.length){alert("There are no students to save.");return;}
+    assignAlphabeticalIds();
+    await syncVfaStudents();
+    await syncVfaGrades();
+    pendingStudentIds.clear();
+    renderAll();
+    alert("Students saved successfully to the school database.");
+  }catch(err){
+    console.error("Student save failed:",err);
+    alert("The students could not be saved to the school database: "+err.message);
+  }
+};
 $("studentClass").onchange=renderStudents;$("studentSearch").oninput=renderStudents;
 function renderStudents(){
- const cls=$("studentClass").value,q=($("studentSearch").value||"").toLowerCase();
- const list=students.filter(s=>(!cls||s.grade===cls)&&(!q||`${s.name} ${s.id}`.toLowerCase().includes(q)));
+ const cls=$("studentClass").value,q=($("studentSearch").value||"").trim().toLowerCase();
+ const list=students.filter(s=>(!cls||cls==="All Classes"||s.grade===cls)&&(!q||`${s.name||""} ${s.id||""}`.toLowerCase().includes(q)));
  $("studentRows").innerHTML=list.map(s=>`<tr><td><strong>${esc(s.id)}</strong></td><td><button class="link-button" onclick="openStudentRecord('${esc(s.id)}')">${esc(s.name)}</button></td><td>${esc(s.grade)}</td><td>${esc(s.parent||"")}</td><td>${esc(s.parentPhone||"")}</td><td><code>${esc(s.password||"")}</code></td><td>${esc(s.status||"Active")}</td><td class="row-actions"><button class="icon-btn" onclick="openStudentForm('${esc(s.id)}')">✏️</button><button class="icon-btn danger" onclick="deleteStudent('${esc(s.id)}')">🗑️</button></td></tr>`).join("")||'<tr><td colspan="8" class="empty">No students in this class.</td></tr>';
 }
 function openStudentForm(id){
@@ -118,14 +145,14 @@ function openStudentForm(id){
  <label>Parent Phone Number<input name="parentPhone" value="${esc(s?.parentPhone||"")}" placeholder="Phone number"></label>
  <label>Sponsor / Class Teacher<select name="sponsor"><option value="">Select staff member</option>${staff.map(t=>{const n=t.name||t.fullName||t.staffName||"";return `<option value="${esc(n)}" ${n===(s?.sponsor||"")?"selected":""}>${esc(n)}</option>`}).join("")}</select></label>
  <label>Status<select name="status"><option ${s?.status!=="Inactive"?"selected":""}>Active</option><option ${s?.status==="Inactive"?"selected":""}>Inactive</option></select></label>
- <label class="full">School Year<input name="schoolYear" value="${esc(s?.schoolYear||"2026–2027")}" required></label>
+ <label class="full">School Year<input name="schoolYear" value="${esc(s?.schoolYear||"")}" required></label>
  <label class="full">ID Card Upload<div class="student-id-upload-box"><input id="studentIdCardUpload" name="idCard" type="file" accept="image/*"><small>Upload this student's ID card. The image will appear in the student's Profile tab.</small><div id="studentIdCardUploadPreview" class="student-id-upload-preview"></div></div></label>
  <div class="credential-box full"><strong>Portal Login</strong><p>Student ID: <code>${esc(s?.id||"Assigned automatically")}</code></p><p>Password: <code id="newStudentPassword">${esc(s?.password||"Will be generated automatically")}</code></p><small>New students receive a strong password automatically. The ID uses the fixed seven-digit prefix ${BASE_ID} and an alphabetical three-digit suffix.</small></div>
  <div class="submit-row"><button class="primary" type="submit">${id?"Save Student":"Add Student"}</button></div></form>`);
  $("studentForm").onsubmit=e=>{
    e.preventDefault();const f=new FormData(e.target);
    const file=f.get("idCard");
-   const finish=()=>{assignAlphabeticalIds();save();closeModal();fillSelect("studentClass",classes,$("studentClass").value);renderAll();};
+   const finish=()=>{assignAlphabeticalIds();pendingStudentIds.add(s?.dbId||s?.id||"pending");closeModal();fillSelect("studentClass",["All Classes",...classes],$("studentClass").value);renderAll();};
    const applyCard=(target)=>{
      if(file && file.size && file.type.startsWith("image/")){const reader=new FileReader();reader.onload=()=>{target.idCard=reader.result;finish();};reader.readAsDataURL(file);}
      else finish();
@@ -135,7 +162,30 @@ function openStudentForm(id){
 
  };
 }
-window.deleteStudent=id=>{const s=students.find(x=>x.id===id);if(!s)return;if(!confirm(`Delete ${s.name}? This removes the student record from this local portal.`))return;students=students.filter(x=>x.id!==id);payments=payments.filter(p=>p.studentId!==id);Object.keys(gradesData).filter(k=>k.startsWith(id+"|")).forEach(k=>delete gradesData[k]);assignAlphabeticalIds();save();renderAll()};
+window.deleteStudent=async id=>{
+ const s=students.find(x=>x.id===id);if(!s)return;
+ if(!confirm(`Delete ${s.name}? This will remove the student and their portal login from Supabase.`))return;
+ try{
+   if(s.auth_user_id){
+     const {data,error}=await vfaSupabase.functions.invoke("bright-api",{
+       body:{action:"delete",studentDbId:s.dbId,authUserId:s.auth_user_id}
+     });
+     if(error)throw error;
+     if(data?.error)throw new Error(data.error);
+   }
+   if(s.dbId){
+     const {error}=await vfaSupabase.from("students").delete().eq("id",s.dbId);
+     if(error)throw error;
+   }
+   students=students.filter(x=>x.id!==id);
+   payments=payments.filter(p=>p.studentId!==id);
+   Object.keys(gradesData).filter(k=>k.startsWith(id+"|")).forEach(k=>delete gradesData[k]);
+   assignAlphabeticalIds();
+   renderAll();
+   alert("Student deleted successfully from the school database.");
+ }catch(err){console.error(err);alert("The student could not be deleted from the school database: "+err.message);}
+};
+
 window.openStudentRecord=id=>{const s=students.find(x=>x.id===id);if(!s)return;openModal(`${s.name} — Student Record`,`<div class="record-grid"><div><strong>Student ID</strong><span>${esc(s.id)}</span></div><div><strong>Class</strong><span>${esc(s.grade)}</span></div><div><strong>Parent / Guardian</strong><span>${esc(s.parent||"")}</span></div><div><strong>Parent Phone</strong><span>${esc(s.parentPhone||"")}</span></div><div><strong>Sponsor / Class Teacher</strong><span>${esc(s.sponsor||"—")}</span></div><div><strong>Portal Password</strong><span><code>${esc(s.password)}</code></span></div><div><strong>School Year</strong><span>${esc(s.schoolYear||"")}</span></div></div><div class="sheet-toolbar"><button class="secondary" onclick="openStudentForm('${esc(s.id)}')">Edit Student</button></div>`);};
 
 $("gradeClass").onchange=renderGrades;$("gradeSemester").onchange=renderGrades;$("gradeSubject").onchange=renderGrades;$("saveAllGrades").onclick=saveGradeSheet;
@@ -200,6 +250,23 @@ function renderAnnouncements(){$("announcementAdminList").innerHTML=announcement
 $("addAnnouncement").onclick=()=>{const title=$("announcementTitle").value.trim(),date=$("announcementDate").value,audience=$("announcementAudience").value,body=$("announcementBody").value.trim();if(!title||!date||!body)return alert("Complete the announcement.");announcements.unshift({id:Date.now()+"",title,date,audience,body});save();$("announcementTitle").value="";$("announcementBody").value="";renderAnnouncements();renderHome()};
 window.removeAnnouncement=id=>{announcements=announcements.filter(a=>a.id!==id);save();renderAnnouncements();renderHome()};
 
+async function loadScaleStatements(){
+ try{
+  const {data,error}=await vfaSupabase.from("scale_settings").select("statements").eq("id",1).maybeSingle();
+  if(error) throw error;
+  if(Array.isArray(data?.statements) && data.statements.length===5) scaleStatements=data.statements.map(x=>String(x||"").trim());
+ }catch(err){ console.warn("Scale settings could not be loaded:",err); }
+ for(let i=1;i<=5;i++){ const el=$("scaleStatement"+i); if(el) el.value=scaleStatements[i-1]||""; }
+}
+$("saveScaleStatements")?.addEventListener("click",async()=>{
+ const vals=[]; for(let i=1;i<=5;i++){ const v=$("scaleStatement"+i)?.value.trim(); if(!v){$("scaleSettingsMessage").textContent=`Statement ${i} cannot be empty.`;return;} vals.push(v); }
+ const btn=$("saveScaleStatements"); btn.disabled=true; $("scaleSettingsMessage").textContent="Saving…";
+ try{
+  const {error}=await vfaSupabase.from("scale_settings").upsert({id:1,statements:vals,updated_at:new Date().toISOString()});
+  if(error) throw error; scaleStatements=vals; $("scaleSettingsMessage").textContent="Saved successfully. Parents/students will now see the updated statements.";
+ }catch(err){ console.error(err); $("scaleSettingsMessage").textContent="Could not save the statements. Run the included scale_settings SQL setup in Supabase first."; }
+ btn.disabled=false;
+});
 function renderScale(){$("scaleList").innerHTML=scaleResponses.slice().reverse().map(r=>`<div class="feedback-item"><div><strong>${esc(r.studentName||"Student")}</strong><span>${esc(r.date||"")} • ${esc(r.studentGrade||"")}</span><p>${esc((r.checks||[]).join(" • "))}</p>${r.note?`<p>${esc(r.note)}</p>`:""}</div><button class="icon-btn" onclick="markScaleReviewed('${esc(r.id)}')">${r.reviewed?"✓ Reviewed":"Mark reviewed"}</button></div>`).join("")||'<p class="empty">No Scale Your Child responses yet.</p>'}
 window.markScaleReviewed=id=>{const r=scaleResponses.find(x=>x.id===id);if(r)r.reviewed=!r.reviewed;save();renderScale();renderHome()};
 
@@ -232,11 +299,11 @@ async function loadVfaRemote(){
  if(ae) throw ae;
  if(admins?.[0]) currentAdmin={...currentAdmin,name:admins[0].full_name,role:admins[0].role};
  const {data:classesDb,error:ce}=await vfaSupabase.from('classes').select('*').order('sort_order'); if(ce)throw ce;
- const classById=Object.fromEntries(classesDb.map(x=>[x.id,x.name]));
+ classRows=classesDb; const classById=Object.fromEntries(classesDb.map(x=>[x.id,x.name]));
  const {data:staffDb,error:se}=await vfaSupabase.from('staff').select('*').order('full_name'); if(se)throw se;
  staff=staffDb.map(x=>({dbId:x.id,id:x.id,name:x.full_name,position:x.position||'',phone:x.phone||''}));
  const {data:studentsDb,error:ste}=await vfaSupabase.from('students').select('*').order('full_name'); if(ste)throw ste;
- students=studentsDb.map(x=>({dbId:x.id,id:x.student_code||'',name:x.full_name,grade:classById[x.class_id]||'',parent:x.parent_name||'',parentPhone:x.parent_phone||'',sponsor:(staff.find(t=>t.id===x.sponsor_id)||{}).name||'',sponsorId:x.sponsor_id||'',status:x.is_active?'Active':'Inactive',schoolYear:x.school_year||'',password:'',idCard:x.id_card_path||'',auth_user_id:x.auth_user_id,tuitionTotal:0}));
+ students=studentsDb.map(x=>({dbId:x.id,id:x.student_code||'',name:x.full_name,grade:classById[x.class_id]||'',parent:x.parent_name||'',parentPhone:x.parent_phone||'',sponsor:(staff.find(t=>t.id===x.sponsor_id)||{}).name||'',sponsorId:x.sponsor_id||'',status:x.is_active?'Active':'Inactive',schoolYear:x.school_year||'',password:x.portal_password||'',idCard:x.id_card_path||'',auth_user_id:x.auth_user_id,tuitionTotal:0}));
  const {data:subs}=await vfaSupabase.from('subjects').select('*'); const {data:pers}=await vfaSupabase.from('academic_periods').select('*');
  const {data:gr}=await vfaSupabase.from('grades').select('*'); const {data:meta}=await vfaSupabase.from('student_period_results').select('*');
  const subById=Object.fromEntries((subs||[]).map(x=>[x.id,x.name])); const perById=Object.fromEntries((pers||[]).map(x=>[x.id,x.period_name])); const byDb=Object.fromEntries(students.map(x=>[x.dbId,x]));
@@ -245,21 +312,35 @@ async function loadVfaRemote(){
  return true;
 }
 async function syncVfaStudents(){
- for(const s of students){
+ const targets=students.filter(s=>!s.dbId || pendingStudentIds.has(s.dbId) || pendingStudentIds.has(s.id));
+ for(const s of targets){
   const cls=classRows?.find(c=>c.name===s.grade)||null;
   const sponsor=staff.find(t=>t.name===s.sponsor)||null;
+  const payload={full_name:s.name,student_code:s.id,class_id:cls?.id||null,sponsor_id:sponsor?.id||null,parent_name:s.parent||null,parent_phone:s.parentPhone||null,school_year:s.schoolYear||null,portal_password:s.password||null,is_active:s.status!=='Inactive'};
   if(!s.dbId){
-   if(!s.password) throw new Error('A new student needs a generated password before saving.');
-   const adminSession=(await vfaSupabase.auth.getSession()).data.session;
-   const email=`${s.id.toLowerCase().replace(/[^a-z0-9]/g,'')}@students.vfa-portal.local`;
-   const {data,error}=await vfaSupabase.auth.signUp({email,password:s.password,options:{data:{portal_role:'student',student_code:s.id}}});
-   if(error) throw error;
-   s.auth_user_id=data.user?.id||null;
-   if(adminSession) await vfaSupabase.auth.setSession({access_token:adminSession.access_token,refresh_token:adminSession.refresh_token});
-   const {data:row,error:e}=await vfaSupabase.from('students').insert({full_name:s.name,student_code:s.id,class_id:cls?.id||null,sponsor_id:sponsor?.id||null,parent_name:s.parent||null,parent_phone:s.parentPhone||null,school_year:s.schoolYear||null,auth_user_id:s.auth_user_id,is_active:s.status!=='Inactive'}).select().single();
-   if(e)throw e;s.dbId=row.id;
+   const {data:row,error}=await vfaSupabase.from("students").insert(payload).select().single();
+   if(error)throw error;
+   s.dbId=row.id;
   }else{
-   const {error}=await vfaSupabase.from('students').update({full_name:s.name,student_code:s.id,class_id:cls?.id||null,sponsor_id:sponsor?.id||null,parent_name:s.parent||null,parent_phone:s.parentPhone||null,school_year:s.schoolYear||null,is_active:s.status!=='Inactive'}).eq('id',s.dbId);if(error)throw error;
+   const {error}=await vfaSupabase.from("students").update(payload).eq("id",s.dbId);
+   if(error)throw error;
+  }
+
+  // Create once, then keep the same Auth user. If the alphabetical student code
+  // changes later, only the internal Auth email changes; the password does not.
+  if(!s.auth_user_id && s.password){
+   const {data:functionData,error:functionError}=await vfaSupabase.functions.invoke("bright-api",{
+    body:{action:"create",studentId:s.id,password:s.password,fullName:s.name,studentDbId:s.dbId}
+   });
+   if(functionError)throw new Error(functionError.message || "Student account function failed.");
+   if(functionData?.error)throw new Error(functionData.error);
+   if(functionData?.studentAuthUserId)s.auth_user_id=functionData.studentAuthUserId;
+  }else if(s.auth_user_id){
+   const {data:functionData,error:functionError}=await vfaSupabase.functions.invoke("bright-api",{
+    body:{action:"sync",studentId:s.id,fullName:s.name,studentDbId:s.dbId,authUserId:s.auth_user_id}
+   });
+   if(functionError)throw new Error(functionError.message || "Student account sync failed.");
+   if(functionData?.error)throw new Error(functionData.error);
   }
  }
 }
@@ -270,7 +351,8 @@ async function syncVfaGrades(){
  const metaRows=[];for(const [k,m] of Object.entries(reportMeta)){const [sid,sem,per]=k.split('|'),st=by[sid],p=pb[per];if(st?.dbId&&p?.id&&m&&(m.average!==undefined||m.rank!==undefined||m.conduct!==undefined))metaRows.push({student_id:st.dbId,period_id:p.id,average:m.average===''?null:Number(m.average),rank:m.rank===''?null:Number(m.rank),conduct:m.conduct||null});} if(metaRows.length){const {error}=await vfaSupabase.from('student_period_results').upsert(metaRows,{onConflict:'student_id,period_id'});if(error)throw error;}
 }
 const oldSave=save;
-save=function(){oldSave();syncVfaStudents().then(syncVfaGrades).catch(err=>{console.error('Supabase save failed:',err);alert('Supabase save failed: '+err.message);});};
+// Student records are intentionally saved to Supabase only when the administrator presses "Save Students".
+// Other portal sections keep their existing local save behavior until their Supabase migration is completed.
 // Administrator profile ID-card upload (stored locally until Supabase Storage is connected)
 function loadAdminIdCard(){
  const key=`vfaAdminIdCard:${currentAdmin?.id||""}`; const data=localStorage.getItem(key); const preview=$("adminIdCardPreview"); if(!preview)return;

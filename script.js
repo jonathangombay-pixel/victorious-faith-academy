@@ -3,7 +3,7 @@ document.getElementById("togglePassword").addEventListener("click",()=>{const sh
 document.getElementById("loginForm").addEventListener("submit",async e=>{
  e.preventDefault();const id=document.getElementById("studentId").value.trim(),pw=password.value.trim(),msg=document.getElementById("message");
  if(!id||!pw)return; msg.textContent="Signing in…";
- const email=`${id.toLowerCase().replace(/[^a-z0-9]/g,"")}@students.vfa-portal.local`;
+ const email=`${id.toLowerCase().replace(/[^a-z0-9]/g,"")}@students.vfa.local`;
  const {data,error}=await vfaSupabase.auth.signInWithPassword({email,password:pw});
  if(error){msg.textContent="Incorrect Student ID or password. Please contact the school office if you need help.";return;}
  const user=data.user;
