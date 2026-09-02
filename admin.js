@@ -18,33 +18,27 @@ if(localStorage.getItem("vfaCleanupVersion")!==VFA_CLEANUP_VERSION){
 const get=(k,d)=>{try{const v=JSON.parse(localStorage.getItem(k));return v??d}catch{return d}};
 let students=[];
 let pendingStudentIds=new Set();
-let payments=get("vfaAdminPayments",[]);
-payments=payments.filter(p=>p && p.studentId);
-let gradesData=get("vfaGrades",{});
-let exams=get("vfaExams",[]);
-let assignments=get("vfaAssignments",[]);
-let announcements=get("vfaAdminAnnouncements",[]);
-let suggestions=get("vfaAdminSuggestions",[]);
-let scaleResponses=get("vfaScaleResponses",[]);
+let payments=[];
+let gradesData={};
+let exams=[];
+let assignments=[];
+let announcements=[];
+let suggestions=[];
+let scaleResponses=[];
 let scaleStatements=["Shows good effort","Completes assignments","Participates in class","Works well with others","Needs additional academic support"];
-let staff=get("vfaStaff",[]);
-let staffAttendance=get("vfaStaffAttendance",[]);
+let staff=[];
+let staffAttendance=[];
 let reportMeta=get("vfaReportMeta",{});
 let currentAdmin=null;
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]));
 const today=()=>new Date().toISOString().slice(0,10);
 function save(){
- localStorage.setItem("vfaAdminPayments",JSON.stringify(payments));
- localStorage.setItem("vfaGrades",JSON.stringify(gradesData));
- localStorage.setItem("vfaExams",JSON.stringify(exams));
- localStorage.setItem("vfaAssignments",JSON.stringify(assignments));
- localStorage.setItem("vfaAdminAnnouncements",JSON.stringify(announcements));
- localStorage.setItem("vfaAdminSuggestions",JSON.stringify(suggestions));
- localStorage.setItem("vfaScaleResponses",JSON.stringify(scaleResponses));
- localStorage.setItem("vfaStaff",JSON.stringify(staff));
- localStorage.setItem("vfaStaffAttendance",JSON.stringify(staffAttendance));
- localStorage.setItem("vfaReportMeta",JSON.stringify(reportMeta));
+ // Supabase is the source of truth. This cache is only for UI/session compatibility.
+ try{
+  localStorage.setItem("vfaGrades",JSON.stringify(gradesData));
+  localStorage.setItem("vfaReportMeta",JSON.stringify(reportMeta));
+ }catch{}
 }
 function makePassword(){
  const chars="ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
@@ -100,7 +94,7 @@ $("staffLoginForm").onsubmit=async e=>{
  $("loginMessage").textContent="Signing in…";
  const {error}=await vfaSupabase.auth.signInWithPassword({email:currentAdmin.email,password:pw});
  if(error){$("loginMessage").textContent="Incorrect Admin ID or password.";currentAdmin=null;return;}
- try{await loadVfaRemote();}catch(err){console.error(err);$("loginMessage").textContent="Signed in, but the school database could not be loaded. Check your Supabase setup.";return;}
+ try{await loadVfaRemote();}catch(err){console.error("VFA database load failed:",err);$("loginMessage").textContent="Database load failed: "+(err?.message||String(err));return;}
  $("loginView").classList.add("hidden");$("adminApp").classList.remove("hidden");
  $("staffPill").textContent=`${currentAdmin.name} • ${currentAdmin.role}`;
  init();
@@ -201,118 +195,211 @@ function renderGrades(){
  $("gradeSheet").innerHTML=list.map(s=>{const mk=`${s.id}|${sem}|${selectedPeriod}`;const m=reportMeta[mk]||{};return `<tr><td>${esc(s.id)}</td><td><strong>${esc(s.name)}</strong></td>${subjects.map(sub=>{const k=gradeKey(s.id,sub,selectedPeriod);return `<td><input class="sheet-input grade-cell" data-key="${esc(k)}" value="${esc(gradesData[k]??"")}" type="number" min="0" max="100" step="1"></td>`}).join("")}<td><input class="sheet-input report-meta" data-meta="${esc(mk)}" data-field="average" value="${esc(m.average??"")}" type="number" min="0" max="100" step="0.01"></td><td><input class="sheet-input report-meta" data-meta="${esc(mk)}" data-field="rank" value="${esc(m.rank??"")}" type="text" placeholder="e.g. 1st"></td><td><input class="sheet-input report-meta" data-meta="${esc(mk)}" data-field="conduct" value="${esc(m.conduct??"")}" type="text" placeholder="Conduct"></td></tr>`}).join("")||`<tr><td colspan="${subjects.length+5}" class="empty">No students in ${esc(cls)}.</td></tr>`;
 }
 function gradeKey(id,sub,period){return `${id}|${sub}|${period}`;}
-function saveGradeSheet(){
+async function saveGradeSheet(){
  document.querySelectorAll(".grade-cell").forEach(i=>{const v=i.value.trim();if(v==="")delete gradesData[i.dataset.key];else gradesData[i.dataset.key]=Math.max(0,Math.min(100,Number(v)))});
  document.querySelectorAll(".report-meta").forEach(i=>{const key=i.dataset.meta;reportMeta[key]=reportMeta[key]||{};const v=i.value.trim();if(v==="")delete reportMeta[key][i.dataset.field];else reportMeta[key][i.dataset.field]=v;});
- save();renderGrades();alert("Grade sheet saved.");
+ try{await syncVfaGrades();await refreshRemoteContent();renderGrades();alert("Grade sheet saved to the school database.");}catch(err){console.error(err);alert("Could not save grades: "+err.message)}
 }
 
+function financeRowsFor(studentId){return payments.filter(p=>p.studentId===studentId).sort((a,b)=>String(a.date).localeCompare(String(b.date)));}
+function financeDue(studentId){const rows=financeRowsFor(studentId);return rows.length?Math.max(...rows.map(r=>Number(r.amountDue||0))):0;}
 function recalcStudentPayments(studentId){
- const s=students.find(x=>x.id===studentId);if(!s)return;
- let running=Number(s.tuitionTotal||0);
- payments.filter(p=>p.studentId===studentId).sort((a,b)=>String(a.date).localeCompare(String(b.date))).forEach(p=>{running=Math.max(0,running-Number(p.amount||0));p.balance=running;});
+ const rows=financeRowsFor(studentId); let running=financeDue(studentId);
+ rows.forEach(p=>{running=Math.max(0,running-Number(p.amount||0));p.balance=running;});
 }
 $("financeClass").onchange=renderFinanceClass;$("financeSearch").oninput=renderFinanceClass;
 function renderFinanceClass(){
- students.forEach(s=>recalcStudentPayments(s.id));
  const cls=$("financeClass").value,q=($("financeSearch").value||"").toLowerCase();
  const list=students.filter(s=>s.grade===cls&&(!q||`${s.name} ${s.id}`.toLowerCase().includes(q)));
- $("financeClassRows").innerHTML=list.map(s=>{const rows=payments.filter(p=>p.studentId===s.id);const due=Number(s.tuitionTotal||0),paid=rows.reduce((a,p)=>a+Number(p.amount||0),0),bal=Math.max(0,due-paid);return `<tr><td><button class="link-button" onclick="openFinance('${esc(s.id)}')">${esc(s.name)}</button></td><td>${esc(s.id)}</td><td>${esc(s.grade)}</td><td>$${due.toFixed(2)}</td><td>$${paid.toFixed(2)}</td><td>$${bal.toFixed(2)}</td><td><button class="secondary small" onclick="openFinance('${esc(s.id)}')">Open Sheet</button></td></tr>`}).join("")||'<tr><td colspan="7" class="empty">No students in this class.</td></tr>';
+ $("financeClassRows").innerHTML=list.map(s=>{const rows=financeRowsFor(s.id),due=financeDue(s.id),paid=rows.reduce((a,p)=>a+Number(p.amount||0),0),bal=Math.max(0,due-paid);return `<tr><td><button class="link-button" onclick="openFinance('${esc(s.id)}')">${esc(s.name)}</button></td><td>${esc(s.id)}</td><td>${esc(s.grade)}</td><td>$${due.toFixed(2)}</td><td>$${paid.toFixed(2)}</td><td>$${bal.toFixed(2)}</td><td><button class="secondary small" onclick="openFinance('${esc(s.id)}')">Open Sheet</button></td></tr>`}).join("")||'<tr><td colspan="7" class="empty">No students in this class.</td></tr>';
 }
 window.openFinance=id=>{
- students.forEach(x=>recalcStudentPayments(x.id));save();
- const s=students.find(x=>x.id===id);if(!s)return;
- const rows=payments.filter(p=>p.studentId===id);const due=Number(s.tuitionTotal||0),paid=rows.reduce((a,p)=>a+Number(p.amount||0),0),bal=Math.max(0,due-paid);
+ const s=students.find(x=>x.id===id);if(!s)return; const rows=financeRowsFor(id),due=financeDue(id),paid=rows.reduce((a,p)=>a+Number(p.amount||0),0),bal=Math.max(0,due-paid);
  openModal(`${s.name} — Financial Record`,`<div class="finance-summary"><div><span>Total Due</span><strong>$${due.toFixed(2)}</strong></div><div><span>Total Paid</span><strong>$${paid.toFixed(2)}</strong></div><div><span>Balance</span><strong>$${bal.toFixed(2)}</strong></div></div>
- <div class="sheet-toolbar"><button class="primary" onclick="addPayment('${esc(id)}')">＋ Add Payment</button><label>Total Tuition Due<input id="studentDue" type="number" min="0" step="0.01" value="${due}"></label></div>
- <div class="table-wrap"><table class="spreadsheet"><thead><tr><th>Date</th><th>Student</th><th>Payment Period / Term</th><th>Amount Paid</th><th>Balance After Payment</th><th>Action</th></tr></thead><tbody>${rows.map((p,i)=>`<tr><td>${esc(p.date)}</td><td>${esc(s.name)}</td><td>${esc(p.period)}</td><td>$${Number(p.amount).toFixed(2)}</td><td>$${Number(p.balance).toFixed(2)}</td><td><button class="icon-btn danger" onclick="deletePayment('${esc(p.id)}','${esc(id)}')">🗑️</button></td></tr>`).join("")||'<tr><td colspan="6" class="empty">No payment records yet.</td></tr>'}</tbody></table></div>
- <p class="record-note">The payment-period field is intentionally flexible (for example, Term 1, Term 2, installment, or another label) until the school confirms its exact fee schedule.</p>`);
- $("studentDue").onchange=()=>{s.tuitionTotal=Math.max(0,Number($("studentDue").value||0));save();renderFinanceClass();};
+ <div class="sheet-toolbar"><button class="primary" onclick="addPayment('${esc(id)}')">＋ Add Payment</button></div>
+ <div class="table-wrap"><table class="spreadsheet"><thead><tr><th>Date</th><th>Student</th><th>Payment Period / Term</th><th>Amount Paid</th><th>Balance After Payment</th><th>Action</th></tr></thead><tbody>${rows.map(p=>`<tr><td>${esc(p.date)}</td><td>${esc(s.name)}</td><td>${esc(p.period)}</td><td>$${Number(p.amount||0).toFixed(2)}</td><td>$${Number(p.balance||0).toFixed(2)}</td><td><button class="icon-btn danger" onclick="deletePayment('${esc(p.id)}','${esc(id)}')">🗑️</button></td></tr>`).join("")||'<tr><td colspan="6" class="empty">No payment records yet.</td></tr>'}</tbody></table></div>
+ <p class="record-note">Financial records are stored in the shared school database. The balance is calculated from the amount due and recorded payments.</p>`);
 };
 window.addPayment=id=>{
  const s=students.find(x=>x.id===id);if(!s)return;
- openModal(`Add Payment — ${s.name}`,`<form id="paymentForm" class="form-grid student-form"><label>Date<input name="date" type="date" value="${today()}" required></label><label>Payment Period / Term<input name="period" placeholder="e.g. First Term" required></label><label>Amount Paid<input name="amount" type="number" min="0.01" step="0.01" required></label><label class="full">Note (optional)<input name="note" placeholder="Receipt or note"></label><div class="submit-row"><button class="primary" type="submit">Save Payment</button></div></form>`);
- $("paymentForm").onsubmit=e=>{e.preventDefault();const f=new FormData(e.target),amt=Number(f.get("amount"));if(!amt)return;const oldPaid=payments.filter(p=>p.studentId===id).reduce((a,p)=>a+Number(p.amount||0),0);const due=Number(s.tuitionTotal||0);payments.push({id:Date.now()+"",studentId:id,studentName:s.name,date:f.get("date"),period:f.get("period").trim(),amount:amt,balance:Math.max(0,due-(oldPaid+amt)),note:f.get("note").trim()});recalcStudentPayments(id);save();openFinance(id);renderFinanceClass();};
+ openModal(`Add Payment — ${s.name}`,`<form id="paymentForm" class="form-grid student-form"><label>Date<input name="date" type="date" value="${today()}" required></label><label>Payment Period / Term<input name="period" placeholder="e.g. First Term" required></label><label>Amount Due<input name="due" type="number" min="0" step="0.01" required></label><label>Amount Paid<input name="amount" type="number" min="0.01" step="0.01" required></label><div class="submit-row"><button class="primary" type="submit">Save Payment</button></div></form>`);
+ $("paymentForm").onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target),amt=Number(f.get("amount")),due=Number(f.get("due"));if(!amt)return;const rows=financeRowsFor(id),oldPaid=rows.reduce((a,p)=>a+Number(p.amount||0),0),balance=Math.max(0,due-(oldPaid+amt));const payload={student_id:s.dbId,payment_date:f.get("date"),payment_period:f.get("period").trim(),amount_paid:amt,amount_due:due};try{const {data,error}=await vfaSafeInsert("financial_records",payload,["payment_period","amount_due"]);if(error)throw error;await refreshRemoteContent();closeModal();openFinance(id);renderFinanceClass();}catch(err){console.error(err);alert("Could not save payment: "+err.message)}};
 };
-window.deletePayment=(pid,sid)=>{if(!confirm("Delete this payment record?"))return;payments=payments.filter(p=>p.id!==pid);recalcStudentPayments(sid);save();openFinance(sid);renderFinanceClass()};
+window.deletePayment=async(pid,sid)=>{if(!confirm("Delete this payment record?"))return;try{const {error}=await vfaSupabase.from("financial_records").delete().eq("id",pid);if(error)throw error;await refreshRemoteContent();openFinance(sid);renderFinanceClass();}catch(err){alert("Could not delete payment: "+err.message)}};
 
 $("examGrade").onchange=renderExams;$("addExamRow").onclick=()=>addExamRow();$("saveExams").onclick=saveExamSheet;
-function renderExams(){const cls=$("examGrade").value;const list=exams.filter(x=>x.grade===cls);$("examSheet").innerHTML=list.map((x,i)=>`<tr data-id="${esc(x.id)}"><td><input class="sheet-input exam-date" type="date" value="${esc(x.date)}"></td><td><input class="sheet-input exam-subject" value="${esc(x.subject)}"></td><td><input class="sheet-input exam-time" value="${esc(x.time)}"></td><td><input class="sheet-input exam-room" value="${esc(x.room)}"></td><td><button class="icon-btn danger" onclick="removeExam('${esc(x.id)}')">🗑️</button></td></tr>`).join("")||'<tr><td colspan="5" class="empty">No exams scheduled for this class.</td></tr>';}
-function addExamRow(){const cls=$("examGrade").value;exams.push({id:Date.now()+"",grade:cls,date:"",subject:"",time:"",room:""});save();renderExams();}
-function saveExamSheet(){document.querySelectorAll("#examSheet tr[data-id]").forEach(tr=>{const x=exams.find(e=>e.id===tr.dataset.id);if(!x)return;x.date=tr.querySelector(".exam-date").value;x.subject=tr.querySelector(".exam-subject").value.trim();x.time=tr.querySelector(".exam-time").value.trim();x.room=tr.querySelector(".exam-room").value.trim()});exams=exams.filter(x=>x.date||x.subject||x.time||x.room);save();renderExams();alert("Examination timetable saved.");}
-window.removeExam=id=>{exams=exams.filter(x=>x.id!==id);save();renderExams()};
-
+function renderExams(){const cls=$("examGrade").value;const list=exams.filter(x=>x.grade===cls);$("examSheet").innerHTML=list.map(x=>`<tr data-id="${esc(x.id)}"><td><input class="sheet-input exam-date" type="date" value="${esc(x.date)}"></td><td><input class="sheet-input exam-subject" value="${esc(x.subject)}"></td><td><input class="sheet-input exam-time" value="${esc(x.time)}"></td><td><input class="sheet-input exam-room" value="${esc(x.room)}"></td><td><button class="icon-btn danger" onclick="removeExam('${esc(x.id)}')">🗑️</button></td></tr>`).join("")||'<tr><td colspan="5" class="empty">No exams scheduled for this class.</td></tr>';}
+async function addExamRow(){exams.push({id:"NEW-"+Date.now(),grade:$("examGrade").value,date:"",subject:"",time:"",room:""});renderExams();}
+async function saveExamSheet(){try{const cls=$("examGrade").value;const classRow=classRows.find(c=>c.name===cls);if(!classRow)throw new Error("Class not found.");const rows=[...document.querySelectorAll("#examSheet tr[data-id]")];for(const tr of rows){const x=exams.find(e=>e.id===tr.dataset.id);if(!x)continue;x.date=tr.querySelector(".exam-date").value;x.subject=tr.querySelector(".exam-subject").value.trim();x.time=tr.querySelector(".exam-time").value.trim();x.room=tr.querySelector(".exam-room").value.trim();if(!x.date&&!x.subject&&!x.time&&!x.room){if(!String(x.id).startsWith("NEW-"))await vfaSupabase.from("exam_timetable").delete().eq("id",x.id);continue;}const subjectRow=subjectRows.find(a=>a.name===x.subject);if(!subjectRow)throw new Error(`Subject not found: ${x.subject}`);const [startTime,endTime]=(x.time||"").split(/\s*-\s*/);const payload={exam_date:x.date||null,start_time:startTime||null,end_time:endTime||null,room:x.room||null,subject_id:subjectRow.id,class_id:classRow.id};let res;if(String(x.id).startsWith("NEW-"))res=await vfaSafeInsert("exam_timetable",payload,["start_time","end_time","room","subject_id","class_id"]);else res=await vfaSafeUpdate("exam_timetable",payload,"id",x.id,["start_time","end_time","room","subject_id","class_id"]);if(res.error)throw res.error;if(res.data){x.id=res.data.id;}}await refreshRemoteContent();renderExams();alert("Examination timetable saved to the school database.");}catch(err){console.error(err);alert("Could not save timetable: "+err.message)}}
+window.removeExam=async id=>{if(String(id).startsWith("NEW-")){exams=exams.filter(x=>x.id!==id);renderExams();return;}if(!confirm("Delete this examination row?"))return;try{const {error}=await vfaSupabase.from("exam_timetable").delete().eq("id",id);if(error)throw error;exams=exams.filter(x=>x.id!==id);renderExams();}catch(err){alert("Could not delete exam: "+err.message)}};
+function audienceClassId(audience){return audience&&audience!=="All Students"?(classRows.find(c=>c.name===audience)?.id||null):null;}
 function renderAssignments(){$("assignmentList").innerHTML=assignments.map(a=>`<div class="announcement-item"><div><strong>${esc(a.title)}</strong><span>${esc(a.subject||"")} • Due ${esc(a.due||"")} • ${esc(a.audience)}</span><p>${esc(a.body)}</p></div><button class="icon-btn danger" onclick="removeAssignment('${esc(a.id)}')">🗑️</button></div>`).join("")||'<p class="empty">No assignments published.</p>'}
-$("addAssignment").onclick=()=>{const title=$("assignmentTitle").value.trim(),audience=$("assignmentAudience").value,subject=$("assignmentSubject").value.trim(),due=$("assignmentDue").value,body=$("assignmentBody").value.trim();if(!title||!body)return alert("Enter an assignment title and instructions.");assignments.unshift({id:Date.now()+"",title,audience,subject,due,body,date:today()});save();$("assignmentTitle").value="";$("assignmentSubject").value="";$("assignmentDue").value="";$("assignmentBody").value="";renderAssignments()};
-window.removeAssignment=id=>{assignments=assignments.filter(a=>a.id!==id);save();renderAssignments()};
-
+$("addAssignment").onclick=async()=>{const title=$("assignmentTitle").value.trim(),audience=$("assignmentAudience").value,subject=$("assignmentSubject").value.trim(),due=$("assignmentDue").value,body=$("assignmentBody").value.trim();if(!title||!body)return alert("Enter an assignment title and instructions.");try{const sr=subjectRows.find(x=>x.name.toLowerCase()===subject.toLowerCase());const {data,error}=await vfaSafeInsert("assignments",{title,description:body,due_date:due||null,class_id:audienceClassId(audience),subject_id:sr?.id||null},["due_date","class_id","subject_id"]);if(error)throw error;await refreshRemoteContent();$("assignmentTitle").value="";$("assignmentSubject").value="";$("assignmentDue").value="";$("assignmentBody").value="";renderAssignments();}catch(err){alert("Could not publish assignment: "+err.message)}};
+window.removeAssignment=async id=>{if(!confirm("Delete this assignment?"))return;try{const {error}=await vfaSupabase.from("assignments").delete().eq("id",id);if(error)throw error;await refreshRemoteContent();renderAssignments();}catch(err){alert("Could not delete assignment: "+err.message)}};
 function renderAnnouncements(){$("announcementAdminList").innerHTML=announcements.map(a=>`<div class="announcement-item"><div><strong>${esc(a.title)}</strong><span>${esc(a.date)} • ${esc(a.audience)}</span><p>${esc(a.body)}</p></div><button class="icon-btn danger" onclick="removeAnnouncement('${esc(a.id)}')">🗑️</button></div>`).join("")||'<p class="empty">No announcements published.</p>'}
-$("addAnnouncement").onclick=()=>{const title=$("announcementTitle").value.trim(),date=$("announcementDate").value,audience=$("announcementAudience").value,body=$("announcementBody").value.trim();if(!title||!date||!body)return alert("Complete the announcement.");announcements.unshift({id:Date.now()+"",title,date,audience,body});save();$("announcementTitle").value="";$("announcementBody").value="";renderAnnouncements();renderHome()};
-window.removeAnnouncement=id=>{announcements=announcements.filter(a=>a.id!==id);save();renderAnnouncements();renderHome()};
+$("addAnnouncement").onclick=async()=>{const title=$("announcementTitle").value.trim(),date=$("announcementDate").value,audience=$("announcementAudience").value,body=$("announcementBody").value.trim();if(!title||!date||!body)return alert("Complete the announcement.");try{const createdAt=date?new Date(`${date}T12:00:00`).toISOString():new Date().toISOString();const {data,error}=await vfaSafeInsert("announcements",{title,message:body,target_class_id:audienceClassId(audience),publish_to_all:audience==="All Students",created_at:createdAt},["target_class_id","publish_to_all","created_at"]);if(error)throw error;await refreshRemoteContent();$("announcementTitle").value="";$("announcementBody").value="";renderAnnouncements();renderHome();}catch(err){alert("Could not publish announcement: "+err.message)}};
+window.removeAnnouncement=async id=>{if(!confirm("Delete this announcement?"))return;try{const {error}=await vfaSupabase.from("announcements").delete().eq("id",id);if(error)throw error;await refreshRemoteContent();renderAnnouncements();renderHome();}catch(err){alert("Could not delete announcement: "+err.message)}};
 
-async function loadScaleStatements(){
- try{
-  const {data,error}=await vfaSupabase.from("scale_settings").select("statements").eq("id",1).maybeSingle();
-  if(error) throw error;
-  if(Array.isArray(data?.statements) && data.statements.length===5) scaleStatements=data.statements.map(x=>String(x||"").trim());
- }catch(err){ console.warn("Scale settings could not be loaded:",err); }
- for(let i=1;i<=5;i++){ const el=$("scaleStatement"+i); if(el) el.value=scaleStatements[i-1]||""; }
-}
-$("saveScaleStatements")?.addEventListener("click",async()=>{
- const vals=[]; for(let i=1;i<=5;i++){ const v=$("scaleStatement"+i)?.value.trim(); if(!v){$("scaleSettingsMessage").textContent=`Statement ${i} cannot be empty.`;return;} vals.push(v); }
- const btn=$("saveScaleStatements"); btn.disabled=true; $("scaleSettingsMessage").textContent="Saving…";
- try{
-  const {error}=await vfaSupabase.from("scale_settings").upsert({id:1,statements:vals,updated_at:new Date().toISOString()});
-  if(error) throw error; scaleStatements=vals; $("scaleSettingsMessage").textContent="Saved successfully. Parents/students will now see the updated statements.";
- }catch(err){ console.error(err); $("scaleSettingsMessage").textContent="Could not save the statements. Run the included scale_settings SQL setup in Supabase first."; }
- btn.disabled=false;
-});
+async function loadScaleStatements(){try{const {data,error}=await vfaSupabase.from("scale_settings").select("statements").eq("id",1).maybeSingle();if(error)throw error;if(Array.isArray(data?.statements)&&data.statements.length===5)scaleStatements=data.statements.map(x=>String(x||"").trim());}catch(err){console.warn("Scale settings could not be loaded:",err)}for(let i=1;i<=5;i++){const el=$("scaleStatement"+i);if(el)el.value=scaleStatements[i-1]||"";}}
+$("saveScaleStatements")?.addEventListener("click",async()=>{const vals=[];for(let i=1;i<=5;i++){const v=$("scaleStatement"+i)?.value.trim();if(!v){$("scaleSettingsMessage").textContent=`Statement ${i} cannot be empty.`;return}vals.push(v)}const btn=$("saveScaleStatements");btn.disabled=true;try{const {error}=await vfaSupabase.from("scale_settings").upsert({id:1,statements:vals,updated_at:new Date().toISOString()});if(error)throw error;scaleStatements=vals;$("scaleSettingsMessage").textContent="Saved successfully."}catch(err){$("scaleSettingsMessage").textContent="Could not save: "+err.message}btn.disabled=false;});
 function renderScale(){$("scaleList").innerHTML=scaleResponses.slice().reverse().map(r=>`<div class="feedback-item"><div><strong>${esc(r.studentName||"Student")}</strong><span>${esc(r.date||"")} • ${esc(r.studentGrade||"")}</span><p>${esc((r.checks||[]).join(" • "))}</p>${r.note?`<p>${esc(r.note)}</p>`:""}</div><button class="icon-btn" onclick="markScaleReviewed('${esc(r.id)}')">${r.reviewed?"✓ Reviewed":"Mark reviewed"}</button></div>`).join("")||'<p class="empty">No Scale Your Child responses yet.</p>'}
-window.markScaleReviewed=id=>{const r=scaleResponses.find(x=>x.id===id);if(r)r.reviewed=!r.reviewed;save();renderScale();renderHome()};
-
+window.markScaleReviewed=async id=>{const r=scaleResponses.find(x=>x.id===id);if(!r)return;const response={...(r.response||{}),checks:r.checks||[],note:r.note||"",reviewed:!r.reviewed};try{const {error}=await vfaSupabase.from("scale_your_child").update({response}).eq("id",id);if(error)throw error;r.reviewed=response.reviewed;renderScale();renderHome();}catch(err){alert("Could not update response: "+err.message)}};
 function renderSuggestions(){$("suggestionList").innerHTML=suggestions.map(s=>`<div class="announcement-item"><div><strong>${esc(s.title)}</strong><span>To: ${esc(s.audience)} • ${esc(s.date)} • By ${esc(s.by)}</span><p>${esc(s.body)}</p></div><button class="icon-btn danger" onclick="removeSuggestion('${esc(s.id)}')">🗑️</button></div>`).join("")||'<p class="empty">No suggestions sent.</p>'}
-$("addSuggestion").onclick=()=>{const audience=$("suggestionAudience").value,title=$("suggestionTitle").value.trim(),body=$("suggestionBody").value.trim();if(!title||!body)return alert("Enter a title and message.");suggestions.unshift({id:Date.now()+"",audience,title,body,date:today(),by:currentAdmin.name});save();$("suggestionTitle").value="";$("suggestionBody").value="";renderSuggestions()};
-window.removeSuggestion=id=>{suggestions=suggestions.filter(s=>s.id!==id);save();renderSuggestions()};
+$("addSuggestion").onclick=async()=>{const audience=$("suggestionAudience").value,title=$("suggestionTitle").value.trim(),body=$("suggestionBody").value.trim();if(!title||!body)return alert("Enter a title and message.");try{const {data,error}=await vfaSafeInsert("admin_suggestions",{title,message:body,target_class_id:audienceClassId(audience)},["target_class_id"]);if(error)throw error;await refreshRemoteContent();$("suggestionTitle").value="";$("suggestionBody").value="";renderSuggestions();}catch(err){alert("Could not send suggestion: "+err.message)}};
+window.removeSuggestion=async id=>{if(!confirm("Delete this suggestion?"))return;try{const {error}=await vfaSupabase.from("admin_suggestions").delete().eq("id",id);if(error)throw error;await refreshRemoteContent();renderSuggestions();}catch(err){alert("Could not delete suggestion: "+err.message)}};
 
-$("staffDate").onchange=renderStaff;
-$("addStaff").onclick=()=>openStaffForm();
-function renderStaff(){
- const date=$("staffDate").value||today();
- $("staffRows").innerHTML=staff.map(s=>{const rec=staffAttendance.find(r=>r.staffId===s.id&&r.date===date);return `<tr><td><strong>${esc(s.name)}</strong></td><td>${esc(s.position)}</td><td><select class="staff-status" data-id="${esc(s.id)}"><option value="present" ${rec?.status==="present"?"selected":""}>Present</option><option value="absent" ${rec?.status==="absent"?"selected":""}>Absent</option></select></td><td>${esc(rec?.time||"—")}</td><td><button class="secondary small" onclick="saveStaffStatus('${esc(s.id)}')">Save</button> <button class="icon-btn" onclick="openStaffForm('${esc(s.id)}')">✏️</button><button class="icon-btn danger" onclick="deleteStaff('${esc(s.id)}')">🗑️</button></td></tr>`}).join("")||'<tr><td colspan="5" class="empty">No staff or teachers added yet.</td></tr>';
+$("staffDate").onchange=renderStaff;$("addStaff").onclick=()=>openStaffForm();
+function formatCheckInTime(value){if(!value)return "—";const d=new Date(value);return Number.isNaN(d.getTime())?String(value):d.toLocaleTimeString([], {hour:"numeric",minute:"2-digit"});}
+function renderStaff(){const date=$("staffDate").value||today();$("staffRows").innerHTML=staff.map(s=>{const rec=staffAttendance.find(r=>r.staffId===s.id&&r.date===date);return `<tr><td><strong>${esc(s.name)}</strong></td><td>${esc(s.position)}</td><td><select class="staff-status" data-id="${esc(s.id)}"><option value="present" ${rec?.status==="present"?"selected":""}>Present</option><option value="absent" ${rec?.status==="absent"?"selected":""}>Absent</option></select></td><td>${esc(formatCheckInTime(rec?.time))}</td><td><button class="secondary small" onclick="saveStaffStatus('${esc(s.id)}')">Save</button> <button class="icon-btn" onclick="openStaffForm('${esc(s.id)}')">✏️</button><button class="icon-btn danger" onclick="deleteStaff('${esc(s.id)}')">🗑️</button></td></tr>`}).join("")||'<tr><td colspan="5" class="empty">No staff or teachers added yet.</td></tr>';}
+async function upsertAttendance(payload,staffId,date){
+  // Attendance is permanent: one record per staff member per date.
+  // When marked Present for the first time, capture the current check-in time.
+  const status=String(payload.status||"").toLowerCase()==="present"?"Present":"Absent";
+  const probe=await vfaSupabase.from("staff_attendance")
+    .select("id,status,check_in_time")
+    .eq("staff_id",staffId)
+    .eq("attendance_date",date)
+    .order("created_at",{ascending:false})
+    .limit(1);
+  if(probe.error)return probe;
+  const existing=probe.data?.[0];
+  const base={staff_id:staffId,status,attendance_date:date,check_in_time:status==="Present"?(existing?.check_in_time||new Date().toISOString()):null};
+  if(existing?.id)return await vfaSupabase.from("staff_attendance").update(base).eq("id",existing.id).select("*");
+  return await vfaSupabase.from("staff_attendance").insert(base).select("*");
 }
-window.saveStaffStatus=id=>{const date=$("staffDate").value||today(),status=document.querySelector(`.staff-status[data-id="${CSS.escape(id)}"]`).value,s=staff.find(x=>x.id===id);if(!s)return;staffAttendance=staffAttendance.filter(r=>!(r.staffId===id&&r.date===date));staffAttendance.push({staffId:id,date,status,time:status==="present"?new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):""});save();renderStaff()};
+window.saveStaffStatus=async id=>{
+  const date=$("staffDate").value||today();
+  const select=document.querySelector(`.staff-status[data-id="${CSS.escape(id)}"]`);
+  const s=staff.find(x=>x.id===id);if(!s||!select)return;
+  try{
+    const res=await upsertAttendance({staff_id:s.id,date,status:select.value},s.id,date);
+    if(res.error)throw res.error;
+    // Immediately reflect the saved attendance in the UI.
+    const existing=staffAttendance.find(r=>r.staffId===id&&r.date===date);
+    const normalized=select.value.toLowerCase();
+    const saved=res.data?.[0]||res.data||{};
+    const savedTime=saved.check_in_time||saved.time||null;
+    if(existing){existing.status=normalized;existing.time=savedTime|| (normalized==="present" ? existing.time : "");}
+    else staffAttendance.push({id:saved.id||`local-${id}-${date}`,staffId:id,date,status:normalized,time:savedTime||""});
+    renderStaff();
+    refreshRemoteContent().then(()=>renderStaff()).catch(err=>console.warn("Attendance refresh warning:",err));
+  }catch(err){console.error(err);alert("Could not save attendance: "+err.message)}
+};
 function openStaffForm(id){
- const s=staff.find(x=>x.id===id);
- openModal(id?"Edit Staff / Teacher":"Add Staff / Teacher",`<form id="staffForm" class="form-grid student-form"><label class="full">Full Name<input name="name" value="${esc(s?.name||"")}" required></label><label>Position<input name="position" value="${esc(s?.position||"")}" placeholder="Teacher, Principal, Secretary..." required></label><label>Phone<input name="phone" value="${esc(s?.phone||"")}" placeholder="Phone number"></label><div class="submit-row"><button class="primary" type="submit">${id?"Save":"Add Staff"}</button></div></form>`);
- $("staffForm").onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);if(id)Object.assign(s,{name:f.get("name").trim(),position:f.get("position").trim(),phone:f.get("phone").trim()});else staff.push({id:"STAFF-"+Date.now(),name:f.get("name").trim(),position:f.get("position").trim(),phone:f.get("phone").trim()});save();closeModal();renderAll()};
+  const s=staff.find(x=>x.id===id);
+  openModal(id?"Edit Staff / Teacher":"Add Staff / Teacher",`<form id="staffForm" class="form-grid student-form"><label class="full">Full Name<input name="name" value="${esc(s?.name||"")}" required></label><label>Position<input name="position" value="${esc(s?.position||"")}" placeholder="Teacher, Principal, Secretary..." required></label><label>Phone<input name="phone" value="${esc(s?.phone||"")}" placeholder="Phone number"></label><div class="submit-row"><button class="primary" type="submit">${id?"Save":"Add Staff"}</button></div></form>`);
+  $("staffForm").onsubmit=async e=>{
+    e.preventDefault();
+    const f=new FormData(e.target);
+    const name=String(f.get("name")||"").trim(),position=String(f.get("position")||"").trim(),phone=String(f.get("phone")||"").trim();
+    try{
+      if(id){
+        const {error}=await vfaSupabase.from("staff").update({full_name:name,position,phone}).eq("id",id);
+        if(error)throw error;
+        if(s)Object.assign(s,{name,position,phone});
+      }else{
+        const {data,error}=await vfaSupabase.from("staff").insert({full_name:name,position,phone}).select("id,full_name,position,phone");
+        if(error)throw error;
+        const row=data?.[0];
+        if(row)staff.push({dbId:row.id,id:row.id,name:row.full_name,position:row.position||"",phone:row.phone||""});
+      }
+      closeModal();renderAll();
+      refreshRemoteContent().then(()=>renderAll()).catch(err=>console.warn("Staff refresh warning:",err));
+    }catch(err){console.error(err);alert("Could not save staff member: "+err.message)}
+  };
 }
-window.deleteStaff=id=>{const s=staff.find(x=>x.id===id);if(!s)return;if(confirm(`Delete ${s.name} from staff?`)){staff=staff.filter(x=>x.id!==id);staffAttendance=staffAttendance.filter(r=>r.staffId!==id);save();renderAll()}};
-
+window.deleteStaff=async id=>{
+  const s=staff.find(x=>x.id===id);if(!s||!confirm(`Delete ${s.name} from staff?`))return;
+  try{
+    const attendanceDelete=await vfaSupabase.from("staff_attendance").delete().eq("staff_id",id);
+    if(attendanceDelete.error)throw new Error(`staff attendance: ${attendanceDelete.error.message}`);
+    const clearSponsor=await vfaSupabase.from("students").update({sponsor_id:null}).eq("sponsor_id",id);
+    if(clearSponsor.error){
+      const msg=String(clearSponsor.error.message||"");
+      if(!/column|schema cache|does not exist/i.test(msg))throw new Error(`student sponsor reference: ${msg}`);
+    }
+    const {error}=await vfaSupabase.from("staff").delete().eq("id",id);
+    if(error)throw error;
+    // Remove immediately from the current page, then confirm from Supabase.
+    staff=staff.filter(x=>x.id!==id);
+    staffAttendance=staffAttendance.filter(x=>x.staffId!==id);
+    students.forEach(st=>{if(st.sponsorId===id){st.sponsorId="";st.sponsor="";}});
+    renderAll();
+    refreshRemoteContent().then(()=>renderAll()).catch(err=>console.warn("Staff refresh warning:",err));
+  }catch(err){console.error(err);alert("Could not delete staff member: "+err.message)}
+};
 function openModal(title,html){$("modalTitle").textContent=title;$("modalBody").innerHTML=html;$("modal").classList.remove("hidden")}
 function closeModal(){$("modal").classList.add("hidden")}
 $("closeModal").onclick=closeModal;$("modal").onclick=e=>{if(e.target.id==="modal")closeModal()};
 (function(){const menu=$("mobileMenu"),sidebar=document.querySelector(".sidebar"),overlay=$("sidebarOverlay");if(!menu||!sidebar||!overlay)return;function close(){sidebar.classList.remove("mobile-open");overlay.classList.remove("show");menu.setAttribute("aria-expanded","false")}menu.onclick=()=>{const open=sidebar.classList.toggle("mobile-open");overlay.classList.toggle("show",open);menu.setAttribute("aria-expanded",String(open))};overlay.onclick=close;sidebar.querySelectorAll("button").forEach(btn=>btn.addEventListener("click",()=>{if(btn!==menu)close()}))})();
 
 /* ================= SUPABASE DATA BRIDGE ================= */
+// Retry inserts/updates when an OPTIONAL column is absent from the live schema.
+// This keeps the portal compatible with the tables already in the user's Supabase project.
+async function vfaSafeInsert(table,payload,optionalKeys=[]){
+  let data={...payload};
+  for(let i=0;i<=optionalKeys.length;i++){
+    const res=await vfaSupabase.from(table).insert(data).select().single();
+    if(!res.error)return res;
+    const m=String(res.error.message||"").match(/(?:column ['\"]?([A-Za-z0-9_]+)['\"]? does not exist|Could not find the ['\"]([A-Za-z0-9_]+)['\"] column)/i);
+    if(!m || !optionalKeys.includes(m[1]) || !(m[1] in data))return res;
+    delete data[m[1]];
+  }
+}
+async function vfaSafeUpdate(table,payload,matchColumn,matchValue,optionalKeys=[]){
+  let data={...payload};
+  for(let i=0;i<=optionalKeys.length;i++){
+    const res=await vfaSupabase.from(table).update(data).eq(matchColumn,matchValue).select().single();
+    if(!res.error)return res;
+    const m=String(res.error.message||"").match(/(?:column ['\"]?([A-Za-z0-9_]+)['\"]? does not exist|Could not find the ['\"]([A-Za-z0-9_]+)['\"] column)/i);
+    if(!m || !optionalKeys.includes(m[1]) || !(m[1] in data))return res;
+    delete data[m[1]];
+  }
+}
+
+async function refreshRemoteContent(){
+  const classMap=Object.fromEntries(classRows.map(x=>[x.id,x.name]));
+  const subMap=Object.fromEntries(subjectRows.map(x=>[x.id,x.name]));
+  const {data:fin,error:fe}=await vfaSupabase.from("financial_records").select("*");
+  if(fe)throw new Error(`financial_records: ${fe.message}`);
+  payments=(fin||[]).map(x=>({id:x.id,studentId:students.find(s=>s.dbId===x.student_id)?.id||x.student_id,date:x.payment_date||x.date||"",period:x.payment_period||x.term||x.period||"",amount:Number(x.amount_paid??x.amount??0),balance:Number(x.balance??0),amountDue:Number(x.amount_due??x.total_due??0)})).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+
+  const {data:ex,error:ee}=await vfaSupabase.from("exam_timetable").select("*");
+  if(ee)throw new Error(`exam_timetable: ${ee.message}`);
+  exams=(ex||[]).map(x=>({id:x.id,grade:classMap[x.class_id]||x.class_name||"",date:x.exam_date||x.date||"",subject:subMap[x.subject_id]||x.subject||"",time:[x.start_time||x.time_start,x.end_time||x.time_end].filter(Boolean).join(" - ")||x.time||"",room:x.room||x.location||""})).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+
+  const {data:as,error:ase}=await vfaSupabase.from("assignments").select("*");
+  if(ase)throw new Error(`assignments: ${ase.message}`);
+  assignments=(as||[]).map(x=>({id:x.id,title:x.title||"",body:x.description||x.message||x.body||"",due:x.due_date||x.date||"",subject:subMap[x.subject_id]||x.subject||"",audience:classMap[x.class_id]||"All Students",createdAt:x.created_at||x.created_on||x.date||x.due_date||""})).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)));
+
+  const {data:an,error:ane}=await vfaSupabase.from("announcements").select("*");
+  if(ane)throw new Error(`announcements: ${ane.message}`);
+  announcements=(an||[]).map(x=>({id:x.id,title:x.title||"",body:x.message||x.description||x.body||"",date:String(x.created_at||x.created_on||x.announcement_date||x.date||"").slice(0,10),audience:x.publish_to_all===true?"All Students":(classMap[x.target_class_id]||"All Students"),createdAt:x.created_at||x.created_on||x.announcement_date||x.date||""})).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)));
+
+  const {data:sg,error:sge}=await vfaSupabase.from("admin_suggestions").select("*");
+  if(sge)throw new Error(`admin_suggestions: ${sge.message}`);
+  suggestions=(sg||[]).map(x=>({id:x.id,title:x.title||"",body:x.message||x.description||x.body||"",date:String(x.created_at||x.created_on||x.suggestion_date||x.date||"").slice(0,10),audience:classMap[x.target_class_id]||"All Students",by:x.created_by||x.author||currentAdmin?.name||"Administration",createdAt:x.created_at||x.created_on||x.suggestion_date||x.date||""})).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)));
+
+  const {data:sr,error:sre}=await vfaSupabase.from("scale_your_child").select("*");
+  if(sre)throw new Error(`scale_your_child: ${sre.message}`);
+  scaleResponses=(sr||[]).map(x=>{const st=students.find(s=>s.dbId===x.student_id),r=x.response||{};return {id:x.id,studentName:st?.name||"Student",studentGrade:st?.grade||"",date:String(x.created_at||x.created_on||x.date||"").slice(0,10),checks:Array.isArray(r.checks)?r.checks:[],note:r.note||"",reviewed:!!r.reviewed,response:r};});
+
+  const {data:sa,error:sae}=await vfaSupabase.from("staff_attendance").select("*");
+  if(sae)throw new Error(`staff_attendance: ${sae.message}`);
+  staffAttendance=(sa||[]).map(x=>({id:x.id,staffId:x.staff_id||x.staffId,date:x.date||x.attendance_date||"",status:String(x.status||"").toLowerCase(),time:x.check_in_time||x.time||x.check_in||""}));
+}
 async function loadVfaRemote(){
- const {data:admins,error:ae}=await vfaSupabase.from('admin_profiles').select('*').eq('auth_user_id',(await vfaSupabase.auth.getUser()).data.user.id).limit(1);
- if(ae) throw ae;
- if(admins?.[0]) currentAdmin={...currentAdmin,name:admins[0].full_name,role:admins[0].role};
- const {data:classesDb,error:ce}=await vfaSupabase.from('classes').select('*').order('sort_order'); if(ce)throw ce;
- classRows=classesDb; const classById=Object.fromEntries(classesDb.map(x=>[x.id,x.name]));
- const {data:staffDb,error:se}=await vfaSupabase.from('staff').select('*').order('full_name'); if(se)throw se;
- staff=staffDb.map(x=>({dbId:x.id,id:x.id,name:x.full_name,position:x.position||'',phone:x.phone||''}));
- const {data:studentsDb,error:ste}=await vfaSupabase.from('students').select('*').order('full_name'); if(ste)throw ste;
- students=studentsDb.map(x=>({dbId:x.id,id:x.student_code||'',name:x.full_name,grade:classById[x.class_id]||'',parent:x.parent_name||'',parentPhone:x.parent_phone||'',sponsor:(staff.find(t=>t.id===x.sponsor_id)||{}).name||'',sponsorId:x.sponsor_id||'',status:x.is_active?'Active':'Inactive',schoolYear:x.school_year||'',password:x.portal_password||'',idCard:x.id_card_path||'',auth_user_id:x.auth_user_id,tuitionTotal:0}));
- const {data:subs}=await vfaSupabase.from('subjects').select('*'); const {data:pers}=await vfaSupabase.from('academic_periods').select('*');
- const {data:gr}=await vfaSupabase.from('grades').select('*'); const {data:meta}=await vfaSupabase.from('student_period_results').select('*');
- const subById=Object.fromEntries((subs||[]).map(x=>[x.id,x.name])); const perById=Object.fromEntries((pers||[]).map(x=>[x.id,x.period_name])); const byDb=Object.fromEntries(students.map(x=>[x.dbId,x]));
- gradesData={};(gr||[]).forEach(x=>{const st=byDb[x.student_id];if(st)gradesData[`${st.id}|${subById[x.subject_id]}|${perById[x.period_id]}`]=x.score;});
- reportMeta={};(meta||[]).forEach(x=>{const st=byDb[x.student_id],p=pers?.find(y=>y.id===x.period_id);if(st&&p){const sem=p.semester===2?'second':'first';reportMeta[`${st.id}|${sem}|${p.period_name}`]={average:x.average,rank:x.rank,conduct:x.conduct||''};}});
- return true;
+ const user=(await vfaSupabase.auth.getUser()).data.user;if(!user)throw new Error("No authenticated admin user.");
+ const {data:admins,error:ae}=await vfaSupabase.from('admin_profiles').select('*').eq('auth_user_id',user.id).limit(1);if(ae)throw new Error(`admin_profiles: ${ae.message}`);if(admins?.[0])currentAdmin={...currentAdmin,name:admins[0].full_name,role:admins[0].role};
+ const {data:classesDb,error:ce}=await vfaSupabase.from('classes').select('*');if(ce)throw new Error(`classes: ${ce.message}`);classRows=classesDb||[];
+ const {data:staffDb,error:se}=await vfaSupabase.from('staff').select('*');if(se)throw new Error(`staff: ${se.message}`);staff=(staffDb||[]).map(x=>({dbId:x.id,id:x.id,name:x.full_name,position:x.position||'',phone:x.phone||''}));
+ const {data:studentsDb,error:ste}=await vfaSupabase.from('students').select('*');if(ste)throw new Error(`students: ${ste.message}`);const classById=Object.fromEntries(classRows.map(x=>[x.id,x.name]));students=(studentsDb||[]).map(x=>({dbId:x.id,id:x.student_code||'',name:x.full_name,grade:classById[x.class_id]||'',parent:x.parent_name||'',parentPhone:x.parent_phone||'',sponsor:(staff.find(t=>t.id===x.sponsor_id)||{}).name||'',sponsorId:x.sponsor_id||'',status:x.is_active?'Active':'Inactive',schoolYear:x.school_year||'',password:x.portal_password||'',idCard:x.id_card_path||'',auth_user_id:x.auth_user_id}));
+ const {data:subs,error:sube}=await vfaSupabase.from('subjects').select('*');if(sube)throw new Error(`subjects: ${sube.message}`);subjectRows=(subs||[]).sort((a,b)=>String(a.name||'').localeCompare(String(b.name||'')));const {data:pers,error:pe}=await vfaSupabase.from('academic_periods').select('*');if(pe)throw new Error(`academic_periods: ${pe.message}`);periodRows=(pers||[]).sort((a,b)=>Number(a.sort_order??0)-Number(b.sort_order??0));
+ const {data:gr,error:ge}=await vfaSupabase.from('grades').select('*');if(ge)throw new Error(`grades: ${ge.message}`);const {data:meta,error:me}=await vfaSupabase.from('student_period_results').select('*');if(me)throw new Error(`student_period_results: ${me.message}`);const subById=Object.fromEntries(subjectRows.map(x=>[x.id,x.name])),perById=Object.fromEntries(periodRows.map(x=>[x.id,x.period_name])),byDb=Object.fromEntries(students.map(x=>[x.dbId,x]));gradesData={};(gr||[]).forEach(x=>{const st=byDb[x.student_id];if(st)gradesData[`${st.id}|${subById[x.subject_id]}|${perById[x.period_id]}`]=x.score;});reportMeta={};(meta||[]).forEach(x=>{const st=byDb[x.student_id];const p=periodRows.find(y=>y.id===x.period_id);if(st&&p){const sem=p.semester===2?'second':'first';reportMeta[`${st.id}|${sem}|${p.period_name}`]={average:x.average,rank:x.rank,conduct:x.conduct||''};}});
+ await refreshRemoteContent();return true;
 }
 async function syncVfaStudents(){
- const targets=students.filter(s=>!s.dbId || pendingStudentIds.has(s.dbId) || pendingStudentIds.has(s.id));
+ const targets=students;
  for(const s of targets){
   const cls=classRows?.find(c=>c.name===s.grade)||null;
   const sponsor=staff.find(t=>t.name===s.sponsor)||null;
@@ -351,8 +438,7 @@ async function syncVfaGrades(){
  const metaRows=[];for(const [k,m] of Object.entries(reportMeta)){const [sid,sem,per]=k.split('|'),st=by[sid],p=pb[per];if(st?.dbId&&p?.id&&m&&(m.average!==undefined||m.rank!==undefined||m.conduct!==undefined))metaRows.push({student_id:st.dbId,period_id:p.id,average:m.average===''?null:Number(m.average),rank:m.rank===''?null:Number(m.rank),conduct:m.conduct||null});} if(metaRows.length){const {error}=await vfaSupabase.from('student_period_results').upsert(metaRows,{onConflict:'student_id,period_id'});if(error)throw error;}
 }
 const oldSave=save;
-// Student records are intentionally saved to Supabase only when the administrator presses "Save Students".
-// Other portal sections keep their existing local save behavior until their Supabase migration is completed.
+// Supabase is the shared source of truth for administrator records.
 // Administrator profile ID-card upload (stored locally until Supabase Storage is connected)
 function loadAdminIdCard(){
  const key=`vfaAdminIdCard:${currentAdmin?.id||""}`; const data=localStorage.getItem(key); const preview=$("adminIdCardPreview"); if(!preview)return;
