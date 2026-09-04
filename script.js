@@ -13,4 +13,6 @@ document.getElementById("loginForm").addEventListener("submit",async e=>{
  location.href="dashboard.html";
 });
 document.getElementById("forgotPassword").addEventListener("click",e=>{e.preventDefault();document.getElementById("message").textContent="Please contact the school office to reset your password.";});
-let deferredPrompt=null;window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();deferredPrompt=e;});document.getElementById("installButton").addEventListener("click",async()=>{if(!deferredPrompt){document.getElementById("message").textContent="The install feature will be enabled when the PWA setup is complete.";return;}deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null;});
+let deferredPrompt=null;window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();deferredPrompt=e;});document.getElementById("installButton").addEventListener("click",async()=>{if(!deferredPrompt){document.getElementById("message").textContent="Install is available when this browser supports web-app installation. If no prompt appears, use your browser menu and choose “Add to Home screen” or “Install app.”";return;}deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null;});
+
+if ("serviceWorker" in navigator) { window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(() => {})); }
