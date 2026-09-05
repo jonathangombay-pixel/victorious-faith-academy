@@ -1,9 +1,11 @@
 const ADMIN_ACCOUNTS=[
-{id:"VFA-OWNER",email:"gombayjonathan7@gmail.com",password:"Fa7th26",name:"Bishop Andrew Gombay Sr",role:"Owner",position:"School Owner",department:"Administration"},
-{id:"VFA-ASSISTANT",email:"jonathansgombay@gmail.com",password:"Sc8ool2",name:"Jue Carmo",role:"Assistant",position:"School Assistant",department:"Administration"},
+{id:"VFA-OWNER",email:"bishop.andrew@your-school-domain.com",password:"Fa7th26",name:"Bishop Andrew Gombay Sr",role:"Owner",position:"School Owner",department:"Administration"},
+
+{id:"VFA-ASSISTANT",email:"jue.carmo@your-school-domain.com",password:"Sc8ool2",name:"Jue Carmo",role:"Assistant",position:"School Assistant",department:"Administration"},
+
 {id:"VFA-JONATHAN",email:"jonathangombay@gmail.com",password:"T3ach27",name:"Jonathan",role:"Administrator",position:"Administrator",department:"Administration"}
-];
-const BASE_ID="0020172";
+
+];const BASE_ID="0020172";
 const classes=["Day Care","Nursery 1","Nursery 2","Kindergarten",...Array.from({length:9},(_,i)=>`Grade ${i+1}`)];
 const subjects=["Mathematics","English Language","Science","Social Studies","ICT","Biology","Chemistry","Physics"];
 const periods={first:["1st Period","2nd Period","3rd Period","Exam"],second:["4th Period","5th Period","6th Period","Exam"]};
