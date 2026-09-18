@@ -229,8 +229,64 @@ window.removeAnnouncement=async id=>{if(!confirm("Delete this announcement?"))re
 
 async function loadScaleStatements(){try{const {data,error}=await vfaSupabase.from("scale_settings").select("statements").eq("id",1).maybeSingle();if(error)throw error;if(Array.isArray(data?.statements)&&data.statements.length===5)scaleStatements=data.statements.map(x=>String(x||"").trim());}catch(err){console.warn("Scale settings could not be loaded:",err)}for(let i=1;i<=5;i++){const el=$("scaleStatement"+i);if(el)el.value=scaleStatements[i-1]||"";}}
 $("saveScaleStatements")?.addEventListener("click",async()=>{const vals=[];for(let i=1;i<=5;i++){const v=$("scaleStatement"+i)?.value.trim();if(!v){$("scaleSettingsMessage").textContent=`Statement ${i} cannot be empty.`;return}vals.push(v)}const btn=$("saveScaleStatements");btn.disabled=true;try{const {error}=await vfaSupabase.from("scale_settings").upsert({id:1,statements:vals,updated_at:new Date().toISOString()});if(error)throw error;scaleStatements=vals;$("scaleSettingsMessage").textContent="Saved successfully."}catch(err){$("scaleSettingsMessage").textContent="Could not save: "+err.message}btn.disabled=false;});
-function renderScale(){$("scaleList").innerHTML=scaleResponses.slice().reverse().map(r=>`<div class="feedback-item"><div><strong>${esc(r.studentName||"Student")}</strong><span>${esc(r.date||"")} • ${esc(r.studentGrade||"")}</span><p>${esc((r.checks||[]).join(" • "))}</p>${r.note?`<p>${esc(r.note)}</p>`:""}</div><button class="icon-btn" onclick="markScaleReviewed('${esc(r.id)}')">${r.reviewed?"✓ Reviewed":"Mark reviewed"}</button></div>`).join("")||'<p class="empty">No Scale Your Child responses yet.</p>'}
-window.markScaleReviewed=async id=>{const r=scaleResponses.find(x=>x.id===id);if(!r)return;const response={...(r.response||{}),checks:r.checks||[],note:r.note||"",reviewed:!r.reviewed};try{const {error}=await vfaSupabase.from("scale_your_child").update({response}).eq("id",id);if(error)throw error;r.reviewed=response.reviewed;renderScale();renderHome();}catch(err){alert("Could not update response: "+err.message)}};
+function formatScaleDate(value){
+ if(!value)return "Date not available";
+ const d=new Date(value);
+ if(Number.isNaN(d.getTime()))return String(value);
+ return d.toLocaleDateString([], {year:"numeric",month:"short",day:"numeric"});
+}
+function normalizeScaleResponse(raw){
+ try{
+  if(typeof raw==="string") raw=JSON.parse(raw);
+ }catch{}
+ raw=raw&&typeof raw==="object"?raw:{};
+ const checks=Array.isArray(raw.checks)?raw.checks.filter(Boolean).map(String):[];
+ const note=raw.note==null?"":String(raw.note);
+ return {checks,note,reviewed:!!raw.reviewed};
+}
+function renderScale(){
+ const rows=scaleResponses.slice().reverse();
+ $("scaleList").innerHTML=rows.map(r=>{
+  const data=normalizeScaleResponse(r.response);
+  r.checks=data.checks;r.note=data.note;r.reviewed=data.reviewed;
+  const selectedSummary=r.checks.length?`${r.checks.length} option${r.checks.length===1?"":"s"} selected`:"No checkbox selected";
+  return `<div class="feedback-item scale-response-card">
+    <div class="scale-response-main">
+      <strong>${esc(r.studentName||"Student")}</strong>
+      <span>${esc(r.date||"")} • ${esc(r.studentGrade||"")}</span>
+      <div class="scale-response-summary"><b>Parent response:</b> ${esc(selectedSummary)}${r.note?` • <b>Additional note:</b> Yes`:` • <b>Additional note:</b> None`}</div>
+    </div>
+    <div class="scale-response-actions">
+      <button class="icon-btn primary-outline" onclick="viewScaleResponse('${esc(r.id)}')">View response</button>
+      <button class="icon-btn" onclick="markScaleReviewed('${esc(r.id)}')">${r.reviewed?"✓ Reviewed":"Mark reviewed"}</button>
+      <button class="icon-btn danger" onclick="deleteScaleResponse('${esc(r.id)}')">🗑️ Delete</button>
+    </div>
+  </div>`;
+ }).join("")||'<p class="empty">No Scale Your Child responses yet.</p>'
+}
+window.viewScaleResponse=id=>{
+ const r=scaleResponses.find(x=>x.id===id);if(!r)return;
+ const data=normalizeScaleResponse(r.response);
+ const statementList=(scaleStatements||[]).map((statement,i)=>{
+  const text=String(statement||"");
+  const selected=data.checks.some(x=>x===text);
+  return `<div class="scale-response-option ${selected?"selected":""}"><span class="scale-check">${selected?"✓":""}</span><span>${esc(text)}</span></div>`;
+ }).join("");
+ const extra=data.checks.filter(x=>!(scaleStatements||[]).some(s=>String(s||"")===x));
+ const extraHtml=extra.length?`<div class="scale-response-extra"><strong>Other recorded selections</strong>${extra.map(x=>`<div class="scale-response-option selected"><span class="scale-check">✓</span><span>${esc(x)}</span></div>`).join("")}</div>`:"";
+ openModal(`Scale Your Child — ${r.studentName||"Student"}`,`
+  <div class="scale-response-detail">
+   <div class="record-grid"><div><strong>Student</strong><span>${esc(r.studentName||"Student")}</span></div><div><strong>Class</strong><span>${esc(r.studentGrade||"")}</span></div><div><strong>Date</strong><span>${esc(r.date||"")}</span></div></div>
+   <h3>Options selected by parent</h3>
+   <div class="scale-response-options">${statementList||'<p class="empty">No statements are currently configured.</p>'}</div>
+   ${extraHtml}
+   <h3>Additional note</h3>
+   <div class="scale-note-box">${data.note?esc(data.note):"No additional note was provided."}</div>
+   <div class="scale-review-status"><strong>Status:</strong> ${data.reviewed?"Reviewed":"Not reviewed"}</div>
+  </div>`);
+};
+window.markScaleReviewed=async id=>{const r=scaleResponses.find(x=>x.id===id);if(!r)return;const data=normalizeScaleResponse(r.response);const response={...(r.response&&typeof r.response==="object"?r.response:{}),checks:data.checks,note:data.note,reviewed:!data.reviewed};try{const {error}=await vfaSupabase.from("scale_your_child").update({response}).eq("id",id);if(error)throw error;r.reviewed=response.reviewed;r.response=response;renderScale();renderHome();}catch(err){alert("Could not update response: "+err.message)}};
+window.deleteScaleResponse=async id=>{const r=scaleResponses.find(x=>x.id===id);if(!r)return;const student=r.studentName||"this student";if(!confirm(`Delete this Scale Your Child response from ${student}?\n\nThis will permanently remove the parent response from the school database.`))return;try{const {error}=await vfaSupabase.from("scale_your_child").delete().eq("id",id);if(error)throw error;scaleResponses=scaleResponses.filter(x=>x.id!==id);renderScale();renderHome();alert("The parent response was deleted.");}catch(err){console.error(err);alert("Could not delete response: "+err.message)}};
 function renderSuggestions(){$("suggestionList").innerHTML=suggestions.map(s=>`<div class="announcement-item"><div><strong>${esc(s.title)}</strong><span>To: ${esc(s.audience)} • ${esc(s.date)} • By ${esc(s.by)}</span><p>${esc(s.body)}</p></div><button class="icon-btn danger" onclick="removeSuggestion('${esc(s.id)}')">🗑️</button></div>`).join("")||'<p class="empty">No suggestions sent.</p>'}
 $("addSuggestion").onclick=async()=>{const audience=$("suggestionAudience").value,title=$("suggestionTitle").value.trim(),body=$("suggestionBody").value.trim();if(!title||!body)return alert("Enter a title and message.");try{const {data,error}=await vfaSafeInsert("admin_suggestions",{title,message:body,target_class_id:audienceClassId(audience)},["target_class_id"]);if(error)throw error;await refreshRemoteContent();$("suggestionTitle").value="";$("suggestionBody").value="";renderSuggestions();}catch(err){alert("Could not send suggestion: "+err.message)}};
 window.removeSuggestion=async id=>{if(!confirm("Delete this suggestion?"))return;try{const {error}=await vfaSupabase.from("admin_suggestions").delete().eq("id",id);if(error)throw error;await refreshRemoteContent();renderSuggestions();}catch(err){alert("Could not delete suggestion: "+err.message)}};
@@ -369,7 +425,7 @@ async function refreshRemoteContent(){
 
   const {data:sr,error:sre}=await vfaSupabase.from("scale_your_child").select("*");
   if(sre)throw new Error(`scale_your_child: ${sre.message}`);
-  scaleResponses=(sr||[]).map(x=>{const st=students.find(s=>s.dbId===x.student_id),r=x.response||{};return {id:x.id,studentName:st?.name||"Student",studentGrade:st?.grade||"",date:String(x.created_at||x.created_on||x.date||"").slice(0,10),checks:Array.isArray(r.checks)?r.checks:[],note:r.note||"",reviewed:!!r.reviewed,response:r};});
+  scaleResponses=(sr||[]).map(x=>{const st=students.find(s=>s.dbId===x.student_id),r=x.response||{};const submittedAt=x.submitted_at||x.created_at||x.created_on||x.date||"";return {id:x.id,studentName:st?.name||"Student",studentGrade:st?.grade||"",date:formatScaleDate(submittedAt),submittedAt,checks:Array.isArray(r.checks)?r.checks:[],note:r.note||"",reviewed:!!r.reviewed,response:r};});
 
   const {data:sa,error:sae}=await vfaSupabase.from("staff_attendance").select("*");
   if(sae)throw new Error(`staff_attendance: ${sae.message}`);
