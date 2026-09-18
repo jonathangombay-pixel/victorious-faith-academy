@@ -1,9 +1,7 @@
 Victorious Faith Academy Portal - demo
 
-Login demo: 0020172(001) / Andrew123
-Staff demo: ADMIN001 / VFAadmin123
 
-This is a prototype. Do not use real student records until a secure backend and authentication system are added.
+This is the Victorious Faith Academy school portal. Authentication and school records are handled through Supabase.
 
 
 PASSWORD FIX

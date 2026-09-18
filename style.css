@@ -4,7 +4,6 @@ body{font-family:Arial,Helvetica,sans-serif;min-height:100vh;background:linear-g
 .school-logo-login{width:210px;height:210px;object-fit:cover;background:#fff;border-radius:50%;display:block;margin:0 0 18px;border:3px solid var(--gold);box-shadow:0 10px 30px rgba(0,0,0,.2)}
 @media(max-width:850px){.login-page{grid-template-columns:1fr;padding:18px}.school-section{padding:40px 24px;text-align:center;align-items:center}.school-section h1{font-size:40px}.description{font-size:15px}.school-logo-login{width:130px;height:130px;margin:0 auto 16px}.login-section{padding:35px 24px;border-radius:20px}.login-links{flex-direction:column;text-align:center}}
 
-.staff-link{display:block;text-align:center;margin-top:16px;color:#8a6510;text-decoration:none;font-size:13px;font-weight:700}.staff-link:hover{text-decoration:underline}
 
 
 

@@ -1,13 +1,29 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>VFA Staff Portal</title><link rel="stylesheet" href="admin.css"><link rel="manifest" href="manifest.json">
+<title>VFA Admin Portal</title><link rel="stylesheet" href="admin.css"><link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
 </head><body>
 <button class="mobile-menu" id="mobileMenu" aria-label="Open navigation" aria-expanded="false">☰</button><div class="sidebar-overlay" id="sidebarOverlay"></div>
-<div id="loginView" class="staff-login"><div class="staff-login-card">
-<img class="staff-logo" src="school-logo.jpg" alt="Victorious Faith Academy logo"><p class="eyebrow">VICTORIOUS FAITH ACADEMY</p><h1>Staff Portal</h1><p class="muted">Authorized school administrators only.</p>
-<form id="staffLoginForm"><label>Admin ID</label><input id="staffId" placeholder="Enter admin ID" required><label>Password</label><div class="password-row"><input id="staffPassword" type="password" placeholder="Enter password" required><button type="button" id="toggleStaffPassword">👁</button></div><button class="primary" type="submit">SIGN IN</button><p id="loginMessage" class="message"></p></form>
-</div></div>
+<div id="loginView" class="staff-login">
+  <div class="staff-login-card admin-login-card">
+    <div class="admin-login-mark"><span>VFA</span></div>
+    <img class="staff-logo" src="school-logo.jpg" alt="Victorious Faith Academy logo">
+    <p class="eyebrow">VICTORIOUS FAITH ACADEMY</p>
+    <h1>Admin Sign In</h1>
+    <p class="muted">Secure administration portal</p>
+    <div class="admin-login-divider"><span>AUTHORIZED ACCESS</span></div>
+    <form id="staffLoginForm">
+      <label for="staffId">Admin ID</label>
+      <input id="staffId" placeholder="e.g. VFA-JONATHAN" autocomplete="username" required>
+      <label for="staffPassword">Password</label>
+      <div class="password-row"><input id="staffPassword" type="password" placeholder="Enter your password" autocomplete="current-password" required><button type="button" id="toggleStaffPassword" aria-label="Show password">👁</button></div>
+      <button class="primary admin-signin-button" type="submit">SIGN IN TO ADMIN PORTAL</button>
+      <p id="loginMessage" class="message"></p>
+    </form>
+    <p class="admin-login-note">For school administrators only. Your password is verified securely through the school's authentication system.</p>
+    <a class="student-portal-link" href="./">← Student / Parent Portal</a>
+  </div>
+</div>
 <div id="adminApp" class="admin-app hidden"><aside class="sidebar"><div class="brand"><img class="small-logo" src="school-logo.jpg" alt="Victorious Faith Academy logo"><h2>Victorious Faith</h2><p>Administration</p></div>
 <nav>
 <button class="nav active" data-section="overview">🏠 Home</button>
@@ -29,7 +45,7 @@
 <div class="panel"><div class="panel-head"><div><p class="eyebrow">QUICK START</p><h2>Administration control center</h2></div></div><p class="muted">Start with Students to create portal accounts. Then use Report Cards, Financial Records, Assignments, Announcements and Examination Timetable to publish information to the appropriate class or student.</p></div></section>
 
 <section id="students" class="section"><div class="panel"><div class="panel-head"><div><p class="eyebrow">REGISTRAR</p><h2>Students</h2><p class="muted">Choose a class, add students, and manage their portal credentials and parent contact information.</p></div><div class="panel-actions"><button class="secondary" id="saveStudents">Save Students</button><button class="primary" id="addStudent">＋ Add Student</button></div></div>
-<div class="toolbar class-toolbar"><label>Class<select id="studentClass"></select></label><label>Search student<input id="studentSearch" placeholder="Search full name or ID"></label></div>
+<div class="toolbar class-toolbar"><label>Class<select id="studentClass"></select></label><label>Search student<input id="studentSearch" placeholder="Search full name or ID"></label><label>Sort by<select id="studentSort"><option value="alphabetical">🔤 Alphabetical — A → Z</option><option value="registration">🔢 Registration Number — 001 → 999</option></select></label></div>
 <div class="table-wrap"><table><thead><tr><th>Student ID</th><th>Student</th><th>Class</th><th>Parent / Guardian</th><th>Parent Phone</th><th>Portal Password</th><th>Status</th><th>Actions</th></tr></thead><tbody id="studentRows"></tbody></table></div></div></section>
 
 <section id="grades" class="section"><div class="panel"><div class="panel-head"><div><p class="eyebrow">ACADEMICS</p><h2>Report Cards</h2><p class="muted">Select a class to work in an Excel-style grade sheet. Enter or edit marks directly in the cells.</p></div></div>

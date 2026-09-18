@@ -1,13 +1,10 @@
 const ADMIN_ACCOUNTS=[
-{id:"VFA-OWNER",email:"bishop.andrew@your-school-domain.com",password:"Fa7th26",name:"Bishop Andrew Gombay Sr",role:"Owner",position:"School Owner",department:"Administration"},
-
-{id:"VFA-ASSISTANT",email:"jue.carmo@your-school-domain.com",password:"Sc8ool2",name:"Jue Carmo",role:"Assistant",position:"School Assistant",department:"Administration"},
-
-{id:"VFA-JONATHAN",email:"jonathangombay@gmail.com",password:"T3ach27",name:"Jonathan",role:"Administrator",position:"Administrator",department:"Administration"}
-
+{id:"VFA-OWNER",email:"bishop.andrew@your-school-domain.com",name:"Bishop Andrew Gombay Sr",role:"Owner",position:"School Owner",department:"Administration"},
+{id:"VFA-ASSISTANT",email:"jue.carmo@your-school-domain.com",name:"Jue Carmo",role:"Assistant",position:"School Assistant",department:"Administration"},
+{id:"VFA-JONATHAN",email:"jonathangombay@gmail.com",name:"Jonathan",role:"Administrator",position:"Administrator",department:"Administration"}
 ];const BASE_ID="0020172";
-const classes=["Day Care","Nursery 1","Nursery 2","Kindergarten",...Array.from({length:9},(_,i)=>`Grade ${i+1}`)];
-const subjects=["Mathematics","English Language","Science","Social Studies","ICT","Biology","Chemistry","Physics"];
+const classes=["Day Care","Kindergarten 1","Kindergarten 2",...Array.from({length:9},(_,i)=>`Grade ${i+1}`)];
+const subjects=["Bible","English","Mathematics","General Science","Social Studies","Writing","Phonics","Computer","Physical Education","Spelling","Reading","Drawing","Arts/Craft"];
 const periods={first:["1st Period","2nd Period","3rd Period","Exam"],second:["4th Period","5th Period","6th Period","Exam"]};
 let classRows=[],subjectRows=[],periodRows=[];
 // One-time cleanup of legacy browser-stored school/demo records.
@@ -46,26 +43,15 @@ function makePassword(){
  const chars="ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
  let out="";for(let i=0;i<7;i++)out+=chars[Math.floor(Math.random()*chars.length)];return out;
 }
-function sortStudents(){students.sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:"base"}));}
-function assignAlphabeticalIds(){
- const before=students.map(s=>({ref:s,old:s.id||""}));
- sortStudents();
- const changes={};
- students.forEach((s,i)=>{
-   const next=`${BASE_ID}(${String(i+1).padStart(3,"0")})`;
-   const old=s.id||"";
-   if(old && old!==next) changes[old]=next;
-   s.id=next;
- });
- if(Object.keys(changes).length){
-   payments.forEach(p=>{if(changes[p.studentId])p.studentId=changes[p.studentId];});
-   const nextGrades={};Object.entries(gradesData).forEach(([k,v])=>{const old=k.split("|")[0];nextGrades[(changes[old]||old)+k.slice(old.length)]=v;});gradesData=nextGrades;
-   const nextMeta={};Object.entries(reportMeta).forEach(([k,v])=>{const old=k.split("|")[0];nextMeta[(changes[old]||old)+k.slice(old.length)]=v;});reportMeta=nextMeta;
-   scaleResponses.forEach(r=>{if(changes[r.studentId])r.studentId=changes[r.studentId];});
-   const logged=get("loggedInStudent",null);if(logged&&changes[logged.id]){logged.id=changes[logged.id];localStorage.setItem("loggedInStudent",JSON.stringify(logged));}
- }
- return changes;
+function formatRegistrationNumber(n){return n==null||n===""?"":String(n).padStart(3,"0");}
+function makeStudentCode(n){return `${BASE_ID}${formatRegistrationNumber(n)}`;}
+function registrationFromCode(id){const m=String(id||"").match(/(\d{3})$/);return m?Number(m[1]):null;}
+function sortStudentsForDisplay(list,mode){
+ const copy=[...list];
+ if(mode==="registration") return copy.sort((a,b)=>Number(a.registration_number??registrationFromCode(a.id)??999999)-Number(b.registration_number??registrationFromCode(b.id)??999999));
+ return copy.sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:"base"}));
 }
+
 function fillSelect(id,items,selected){
  const el=$(id); if(!el)return;
  el.innerHTML=items.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("");
@@ -74,7 +60,6 @@ function fillSelect(id,items,selected){
 function init(){
  // Passwords are assigned only once for newly created students. Remote students load their stored password.
  students.forEach(s=>{if(!s.dbId && !s.password)s.password=makePassword();});
- if(students.length)assignAlphabeticalIds();
  if(!students.length) localStorage.removeItem("vfaAdminStudents");
  fillSelect("studentClass",["All Classes",...classes],"All Classes");
  fillSelect("gradeClass",classes); fillSelect("financeClass",classes); fillSelect("examGrade",classes);
@@ -114,7 +99,6 @@ $("addStudent").onclick=()=>openStudentForm();
 $("saveStudents").onclick=async()=>{
   try{
     if(!students.length){alert("There are no students to save.");return;}
-    assignAlphabeticalIds();
     await syncVfaStudents();
     await syncVfaGrades();
     pendingStudentIds.clear();
@@ -125,14 +109,16 @@ $("saveStudents").onclick=async()=>{
     alert("The students could not be saved to the school database: "+err.message);
   }
 };
-$("studentClass").onchange=renderStudents;$("studentSearch").oninput=renderStudents;
+$("studentClass").onchange=renderStudents;$("studentSearch").oninput=renderStudents;$("studentSort").onchange=renderStudents;
 function renderStudents(){
- const cls=$("studentClass").value,q=($("studentSearch").value||"").trim().toLowerCase();
- const list=students.filter(s=>(!cls||cls==="All Classes"||s.grade===cls)&&(!q||`${s.name||""} ${s.id||""}`.toLowerCase().includes(q)));
- $("studentRows").innerHTML=list.map(s=>`<tr><td><strong>${esc(s.id)}</strong></td><td><button class="link-button" onclick="openStudentRecord('${esc(s.id)}')">${esc(s.name)}</button></td><td>${esc(s.grade)}</td><td>${esc(s.parent||"")}</td><td>${esc(s.parentPhone||"")}</td><td><code>${esc(s.password||"")}</code></td><td>${esc(s.status||"Active")}</td><td class="row-actions"><button class="icon-btn" onclick="openStudentForm('${esc(s.id)}')">✏️</button><button class="icon-btn danger" onclick="deleteStudent('${esc(s.id)}')">🗑️</button></td></tr>`).join("")||'<tr><td colspan="8" class="empty">No students in this class.</td></tr>';
+ const cls=$("studentClass").value,q=($("studentSearch").value||"").trim().toLowerCase(),mode=$("studentSort")?.value||"alphabetical";
+ const filtered=students.filter(s=>(!cls||cls==="All Classes"||s.grade===cls)&&(!q||`${s.name||""} ${s.id||""}`.toLowerCase().includes(q)));
+ const list=sortStudentsForDisplay(filtered,mode);
+ $("studentRows").innerHTML=list.map(s=>{const reg=s.registration_number??registrationFromCode(s.id);const displayId=s.id||"Assigned on save";const key=s.id||s._localId;return `<tr><td><strong>${esc(displayId)}</strong><small class="student-reg">${reg?`Registration ${esc(formatRegistrationNumber(reg))}`:""}</small></td><td><button class="link-button" onclick="openStudentRecord('${esc(key)}')">${esc(s.name)}</button></td><td>${esc(s.grade)}</td><td>${esc(s.parent||"")}</td><td>${esc(s.parentPhone||"")}</td><td><code>${esc(s.password||"")}</code></td><td>${esc(s.status||"Active")}</td><td class="row-actions"><button class="icon-btn" onclick="openStudentForm('${esc(key)}')">✏️</button>${s.dbId?`<button class="icon-btn danger" onclick="deleteStudent('${esc(s.id)}')">🗑️</button>`:""}</td></tr>`}).join("")||'<tr><td colspan="8" class="empty">No students in this class.</td></tr>';
 }
+
 function openStudentForm(id){
- const s=students.find(x=>x.id===id);
+ const s=students.find(x=>x.id===id||x._localId===id);
  const grade=s?.grade||$("studentClass").value||classes[0];
  openModal(id?"Edit Student":"Add Student",`<form id="studentForm" class="form-grid student-form">
  <label class="full">Student Full Name<input name="name" value="${esc(s?.name||"")}" required></label>
@@ -143,18 +129,18 @@ function openStudentForm(id){
  <label>Status<select name="status"><option ${s?.status!=="Inactive"?"selected":""}>Active</option><option ${s?.status==="Inactive"?"selected":""}>Inactive</option></select></label>
  <label class="full">School Year<input name="schoolYear" value="${esc(s?.schoolYear||"")}" required></label>
  <label class="full">ID Card Upload<div class="student-id-upload-box"><input id="studentIdCardUpload" name="idCard" type="file" accept="image/*"><small>Upload this student's ID card. The image will appear in the student's Profile tab.</small><div id="studentIdCardUploadPreview" class="student-id-upload-preview"></div></div></label>
- <div class="credential-box full"><strong>Portal Login</strong><p>Student ID: <code>${esc(s?.id||"Assigned automatically")}</code></p><p>Password: <code id="newStudentPassword">${esc(s?.password||"Will be generated automatically")}</code></p><small>New students receive a strong password automatically. The ID uses the fixed seven-digit prefix ${BASE_ID} and an alphabetical three-digit suffix.</small></div>
+ <div class="credential-box full"><strong>Portal Login</strong><p>Student ID: <code>${esc(s?.id||"Assigned automatically")}</code></p><p>Password: <code id="newStudentPassword">${esc(s?.password||"Will be generated automatically")}</code></p><small>New students receive a strong password automatically. The Student ID uses the fixed seven-digit prefix ${BASE_ID}. The last three digits are a permanent registration number assigned in the order students are registered within their class. Names can be sorted without changing the ID.</small></div>
  <div class="submit-row"><button class="primary" type="submit">${id?"Save Student":"Add Student"}</button></div></form>`);
  $("studentForm").onsubmit=e=>{
    e.preventDefault();const f=new FormData(e.target);
    const file=f.get("idCard");
-   const finish=()=>{assignAlphabeticalIds();pendingStudentIds.add(s?.dbId||s?.id||"pending");closeModal();fillSelect("studentClass",["All Classes",...classes],$("studentClass").value);renderAll();};
+   const finish=()=>{pendingStudentIds.add(s?.dbId||s?.id||"pending");closeModal();fillSelect("studentClass",["All Classes",...classes],$("studentClass").value);renderAll();};
    const applyCard=(target)=>{
      if(file && file.size && file.type.startsWith("image/")){const reader=new FileReader();reader.onload=()=>{target.idCard=reader.result;finish();};reader.readAsDataURL(file);}
      else finish();
    };
-   if(id){Object.assign(s,{name:f.get("name").trim(),grade:f.get("grade"),parent:f.get("parent").trim(),parentPhone:f.get("parentPhone").trim(),sponsor:f.get("sponsor").trim(),status:f.get("status"),schoolYear:f.get("schoolYear").trim()});applyCard(s);}
-   else{const ns={id:"",name:f.get("name").trim(),grade:f.get("grade"),parent:f.get("parent").trim(),parentPhone:f.get("parentPhone").trim(),sponsor:f.get("sponsor").trim(),status:f.get("status"),schoolYear:f.get("schoolYear").trim(),password:makePassword(),idCard:""};students.push(ns);applyCard(ns);}
+   if(id){Object.assign(s,{name:f.get("name").trim(),grade:f.get("grade"),parent:f.get("parent").trim(),parentPhone:f.get("parentPhone").trim(),sponsor:f.get("sponsor").trim(),status:f.get("status"),schoolYear:f.get("schoolYear").trim()});if(!s.registration_number)s.registration_number=registrationFromCode(s.id);applyCard(s);}
+   else{const ns={id:"",_localId:`new-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,registration_number:null,name:f.get("name").trim(),grade:f.get("grade"),parent:f.get("parent").trim(),parentPhone:f.get("parentPhone").trim(),sponsor:f.get("sponsor").trim(),status:f.get("status"),schoolYear:f.get("schoolYear").trim(),password:makePassword(),idCard:""};students.push(ns);applyCard(ns);}
 
  };
 }
@@ -176,13 +162,12 @@ window.deleteStudent=async id=>{
    students=students.filter(x=>x.id!==id);
    payments=payments.filter(p=>p.studentId!==id);
    Object.keys(gradesData).filter(k=>k.startsWith(id+"|")).forEach(k=>delete gradesData[k]);
-   assignAlphabeticalIds();
    renderAll();
-   alert("Student deleted successfully from the school database.");
+   alert("Student deleted successfully from the school database. Existing registration numbers were not changed or recycled.");
  }catch(err){console.error(err);alert("The student could not be deleted from the school database: "+err.message);}
 };
 
-window.openStudentRecord=id=>{const s=students.find(x=>x.id===id);if(!s)return;openModal(`${s.name} — Student Record`,`<div class="record-grid"><div><strong>Student ID</strong><span>${esc(s.id)}</span></div><div><strong>Class</strong><span>${esc(s.grade)}</span></div><div><strong>Parent / Guardian</strong><span>${esc(s.parent||"")}</span></div><div><strong>Parent Phone</strong><span>${esc(s.parentPhone||"")}</span></div><div><strong>Sponsor / Class Teacher</strong><span>${esc(s.sponsor||"—")}</span></div><div><strong>Portal Password</strong><span><code>${esc(s.password)}</code></span></div><div><strong>School Year</strong><span>${esc(s.schoolYear||"")}</span></div></div><div class="sheet-toolbar"><button class="secondary" onclick="openStudentForm('${esc(s.id)}')">Edit Student</button></div>`);};
+window.openStudentRecord=id=>{const s=students.find(x=>x.id===id||x._localId===id);if(!s)return;const reg=s.registration_number??registrationFromCode(s.id);openModal(`${s.name} — Student Record`,`<div class="record-grid"><div><strong>Student ID</strong><span>${esc(s.id||"Assigned on save")}</span></div><div><strong>Registration Number</strong><span>${esc(reg?formatRegistrationNumber(reg):"Assigned on save")}</span></div><div><strong>Class</strong><span>${esc(s.grade)}</span></div><div><strong>Parent / Guardian</strong><span>${esc(s.parent||"")}</span></div><div><strong>Parent Phone</strong><span>${esc(s.parentPhone||"")}</span></div><div><strong>Sponsor / Class Teacher</strong><span>${esc(s.sponsor||"—")}</span></div><div><strong>Portal Password</strong><span><code>${esc(s.password)}</code></span></div><div><strong>School Year</strong><span>${esc(s.schoolYear||"")}</span></div></div><div class="sheet-toolbar"><button class="secondary" onclick="openStudentForm('${esc(s.id||s._localId)}')">Edit Student</button></div>`);};
 
 $("gradeClass").onchange=renderGrades;$("gradeSemester").onchange=renderGrades;$("gradeSubject").onchange=renderGrades;$("saveAllGrades").onclick=saveGradeSheet;
 function renderGrades(){
@@ -392,10 +377,10 @@ async function refreshRemoteContent(){
 }
 async function loadVfaRemote(){
  const user=(await vfaSupabase.auth.getUser()).data.user;if(!user)throw new Error("No authenticated admin user.");
- const {data:admins,error:ae}=await vfaSupabase.from('admin_profiles').select('*').eq('auth_user_id',user.id).limit(1);if(ae)throw new Error(`admin_profiles: ${ae.message}`);if(admins?.[0])currentAdmin={...currentAdmin,name:admins[0].full_name,role:admins[0].role};
+ const {data:admins,error:ae}=await vfaSupabase.from('admin_profiles').select('*').eq('auth_user_id',user.id).limit(1);if(ae)throw new Error(`admin_profiles: ${ae.message}`);if(!admins?.[0])throw new Error('This account is not authorized as a VFA administrator.');currentAdmin={...currentAdmin,name:admins[0].full_name||currentAdmin.name,role:admins[0].role||currentAdmin.role};
  const {data:classesDb,error:ce}=await vfaSupabase.from('classes').select('*');if(ce)throw new Error(`classes: ${ce.message}`);classRows=classesDb||[];
  const {data:staffDb,error:se}=await vfaSupabase.from('staff').select('*');if(se)throw new Error(`staff: ${se.message}`);staff=(staffDb||[]).map(x=>({dbId:x.id,id:x.id,name:x.full_name,position:x.position||'',phone:x.phone||''}));
- const {data:studentsDb,error:ste}=await vfaSupabase.from('students').select('*');if(ste)throw new Error(`students: ${ste.message}`);const classById=Object.fromEntries(classRows.map(x=>[x.id,x.name]));students=(studentsDb||[]).map(x=>({dbId:x.id,id:x.student_code||'',name:x.full_name,grade:classById[x.class_id]||'',parent:x.parent_name||'',parentPhone:x.parent_phone||'',sponsor:(staff.find(t=>t.id===x.sponsor_id)||{}).name||'',sponsorId:x.sponsor_id||'',status:x.is_active?'Active':'Inactive',schoolYear:x.school_year||'',password:x.portal_password||'',idCard:x.id_card_path||'',auth_user_id:x.auth_user_id}));
+ const {data:studentsDb,error:ste}=await vfaSupabase.from('students').select('*');if(ste)throw new Error(`students: ${ste.message}`);const classById=Object.fromEntries(classRows.map(x=>[x.id,x.name]));students=(studentsDb||[]).map(x=>({dbId:x.id,id:x.student_code||'',registration_number:x.registration_number??registrationFromCode(x.student_code),name:x.full_name,grade:classById[x.class_id]||'',parent:x.parent_name||'',parentPhone:x.parent_phone||'',sponsor:(staff.find(t=>t.id===x.sponsor_id)||{}).name||'',sponsorId:x.sponsor_id||'',status:x.is_active?'Active':'Inactive',schoolYear:x.school_year||'',password:x.portal_password||'',idCard:x.id_card_path||'',auth_user_id:x.auth_user_id}));
  const {data:subs,error:sube}=await vfaSupabase.from('subjects').select('*');if(sube)throw new Error(`subjects: ${sube.message}`);subjectRows=(subs||[]).sort((a,b)=>String(a.name||'').localeCompare(String(b.name||'')));const {data:pers,error:pe}=await vfaSupabase.from('academic_periods').select('*');if(pe)throw new Error(`academic_periods: ${pe.message}`);periodRows=(pers||[]).sort((a,b)=>Number(a.sort_order??0)-Number(b.sort_order??0));
  const {data:gr,error:ge}=await vfaSupabase.from('grades').select('*');if(ge)throw new Error(`grades: ${ge.message}`);const {data:meta,error:me}=await vfaSupabase.from('student_period_results').select('*');if(me)throw new Error(`student_period_results: ${me.message}`);const subById=Object.fromEntries(subjectRows.map(x=>[x.id,x.name])),perById=Object.fromEntries(periodRows.map(x=>[x.id,x.period_name])),byDb=Object.fromEntries(students.map(x=>[x.dbId,x]));gradesData={};(gr||[]).forEach(x=>{const st=byDb[x.student_id];if(st)gradesData[`${st.id}|${subById[x.subject_id]}|${perById[x.period_id]}`]=x.score;});reportMeta={};(meta||[]).forEach(x=>{const st=byDb[x.student_id];const p=periodRows.find(y=>y.id===x.period_id);if(st&&p){const sem=p.semester===2?'second':'first';reportMeta[`${st.id}|${sem}|${p.period_name}`]={average:x.average,rank:x.rank,conduct:x.conduct||''};}});
  await refreshRemoteContent();return true;
@@ -405,13 +390,16 @@ async function syncVfaStudents(){
  for(const s of targets){
   const cls=classRows?.find(c=>c.name===s.grade)||null;
   const sponsor=staff.find(t=>t.name===s.sponsor)||null;
-  const payload={full_name:s.name,student_code:s.id,class_id:cls?.id||null,sponsor_id:sponsor?.id||null,parent_name:s.parent||null,parent_phone:s.parentPhone||null,school_year:s.schoolYear||null,portal_password:s.password||null,is_active:s.status!=='Inactive'};
+  const payload={full_name:s.name,class_id:cls?.id||null,sponsor_id:sponsor?.id||null,parent_name:s.parent||null,parent_phone:s.parentPhone||null,school_year:s.schoolYear||null,portal_password:s.password||null,is_active:s.status!=='Inactive'};
   if(!s.dbId){
-   const {data:row,error}=await vfaSupabase.from("students").insert(payload).select().single();
+   const {data:row,error}=await vfaSupabase.from("students").insert({...payload,student_code:null,registration_number:null}).select().single();
    if(error)throw error;
    s.dbId=row.id;
+   s.id=row.student_code||makeStudentCode(row.registration_number);
+   s.registration_number=row.registration_number??registrationFromCode(s.id);
   }else{
-   const {error}=await vfaSupabase.from("students").update(payload).eq("id",s.dbId);
+   const updatePayload={...payload,student_code:s.id,registration_number:s.registration_number??registrationFromCode(s.id)};
+   const {error}=await vfaSupabase.from("students").update(updatePayload).eq("id",s.dbId);
    if(error)throw error;
   }
 
