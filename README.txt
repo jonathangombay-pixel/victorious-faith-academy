@@ -7,3 +7,5 @@ This is the Victorious Faith Academy school portal. Authentication and school re
 PASSWORD FIX
 Before testing new student accounts, run ADD_STUDENT_PASSWORD_COLUMN.sql in Supabase SQL Editor.
 Student passwords are generated once for new students, saved with the student record, and loaded unchanged after logout/login.
+
+Finance setup: run FEE_STRUCTURE_SETUP.sql in Supabase to create and seed the fee structure table.
