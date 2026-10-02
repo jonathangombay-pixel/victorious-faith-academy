@@ -1,7 +1,7 @@
 const $=id=>document.getElementById(id);const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]));
 const periods=[{name:"1st Period",semester:"first",column:"first"},{name:"2nd Period",semester:"first",column:"second"},{name:"3rd Period",semester:"first",column:"third"},{name:"Exam",semester:"first",column:"exam"},{name:"4th Period",semester:"second",column:"fourth"},{name:"5th Period",semester:"second",column:"fifth"},{name:"6th Period",semester:"second",column:"sixth"},{name:"Exam",semester:"second",column:"second_exam"}];
-async function load(options={}){
- if(options.refreshAuth!==false){try{await vfaSupabase.auth.refreshSession();}catch(err){console.warn("VFA student session refresh failed:",err);}}
+async function load(){
+ try{await vfaSupabase.auth.refreshSession();}catch(err){console.warn("VFA student session refresh failed:",err);}
  const {data:{user},error:ue}=await vfaSupabase.auth.getUser();if(ue||!user){location.href="./";return;}
  const {data:student,error:se}=await vfaSupabase.from("students").select("id,student_code,full_name,class_id,sponsor_id,parent_name,parent_phone,school_year,registration_date,sex,enrollment_status,scholarship,is_active").eq("auth_user_id",user.id).maybeSingle();if(se||!student||!student.is_active){await vfaSupabase.auth.signOut();location.href="./";return;}
  const [{data:cls},{data:sponsor},{data:subjects},{data:grades},{data:finance},{data:feeStructure},{data:exams},{data:assignmentsClass},{data:assignmentsAll},{data:announcementsClass},{data:announcementsAll},{data:suggestions},{data:scaleSettings,error:scaleSettingsError}]=await Promise.all([
@@ -54,46 +54,31 @@ function openTab(id){document.querySelectorAll(".tab-page").forEach(p=>p.classLi
 $("logout")?.addEventListener("click",async()=>{await vfaSupabase.auth.signOut();localStorage.removeItem("loggedInStudent");location.href="./"});
 let vfaStudentRealtimeChannel=null;
 let vfaStudentRealtimeTimer=null;
-let vfaStudentRealtimeRetryTimer=null;
-let vfaStudentRealtimeKeepaliveTimer=null;
-let vfaStudentFallbackPollTimer=null;
-let vfaStudentFallbackPollBusy=false;
-let vfaStudentRealtimeLastEvent=0;
+let vfaStudentRealtimePoll=null;
+let vfaStudentRealtimeBusy=false;
+const VFA_STUDENT_LIVE_TABLES=["students","financial_records","fee_structures","grades","exam_timetable","assignments","announcements","admin_suggestions","scale_settings","classes","subjects"];
 async function refreshStudentRealtimeView(){
+  if(vfaStudentRealtimeBusy)return;
   clearTimeout(vfaStudentRealtimeTimer);
   vfaStudentRealtimeTimer=setTimeout(async()=>{
-    try{await load();}catch(err){console.warn("VFA student realtime refresh failed:",err);}
+    if(vfaStudentRealtimeBusy)return;
+    vfaStudentRealtimeBusy=true;
+    try{await load();}catch(err){console.warn("VFA student realtime refresh failed:",err);}finally{vfaStudentRealtimeBusy=false;}
   },150);
 }
-function scheduleStudentRealtimeRetry(){
-  clearTimeout(vfaStudentRealtimeRetryTimer);
-  vfaStudentRealtimeRetryTimer=setTimeout(()=>setupStudentRealtime(),2000);
-}
 function setupStudentRealtime(){
-  clearTimeout(vfaStudentRealtimeRetryTimer);
-  if(vfaStudentRealtimeChannel){try{vfaSupabase.removeChannel(vfaStudentRealtimeChannel);}catch(_){}}
-  const tables=["students","financial_records","fee_structures","grades","exam_timetable","assignments","announcements","admin_suggestions","scale_settings","classes","subjects"];
-  vfaStudentRealtimeChannel=vfaSupabase.channel("vfa-student-live-data-"+Date.now());
-  tables.forEach(table=>{vfaStudentRealtimeChannel.on("postgres_changes",{event:"*",schema:"public",table},()=>{vfaStudentRealtimeLastEvent=Date.now();refreshStudentRealtimeView();});});
+  if(vfaStudentRealtimeChannel){vfaSupabase.removeChannel(vfaStudentRealtimeChannel);vfaStudentRealtimeChannel=null;}
+  if(vfaStudentRealtimePoll)clearInterval(vfaStudentRealtimePoll);
+  vfaStudentRealtimeChannel=vfaSupabase.channel("vfa-student-live-data",{config:{broadcast:{ack:false}}});
+  VFA_STUDENT_LIVE_TABLES.forEach(table=>{vfaStudentRealtimeChannel.on("postgres_changes",{event:"*",schema:"public",table},()=>refreshStudentRealtimeView());});
   vfaStudentRealtimeChannel.subscribe(status=>{
-    if(status==="SUBSCRIBED"){vfaStudentRealtimeLastEvent=Date.now();console.info("VFA live sync connected");}
-    else {console.warn("VFA live sync status:",status);scheduleStudentRealtimeRetry();}
+    console.debug("VFA student realtime status:",status);
+    if(status==="CHANNEL_ERROR"||status==="TIMED_OUT"||status==="CLOSED"){
+      setTimeout(()=>setupStudentRealtime(),1000);
+    }
   });
+  // Fast websocket events plus a 5-second fallback keep an already-open
+  // phone/browser synchronized even when Realtime is unavailable.
+  vfaStudentRealtimePoll=setInterval(()=>refreshStudentRealtimeView(),5000);
 }
-clearInterval(vfaStudentRealtimeKeepaliveTimer);
-vfaStudentRealtimeKeepaliveTimer=setInterval(()=>{
-  if(document.visibilityState!=="visible") return;
-  if(vfaStudentRealtimeChannel?.state!=="joined") setupStudentRealtime();
-},5000);
-// Guaranteed cross-device fallback when Realtime is delayed/unavailable.
-// Reads only; it does not alter authentication or write database data.
-clearInterval(vfaStudentFallbackPollTimer);
-vfaStudentFallbackPollTimer=setInterval(async()=>{
-  if(document.visibilityState!=="visible" || vfaStudentFallbackPollBusy) return;
-  if(Date.now()-vfaStudentRealtimeLastEvent<1800) return;
-  vfaStudentFallbackPollBusy=true;
-  try{await load({refreshAuth:false});}
-  catch(err){console.warn("VFA student live-sync fallback refresh failed:",err);}
-  finally{vfaStudentFallbackPollBusy=false;}
-},2000);
 (async()=>{try{await load();setupStudentRealtime();}catch(err){console.error(err);alert("The student portal could not load: "+(err.message||err));}})();
