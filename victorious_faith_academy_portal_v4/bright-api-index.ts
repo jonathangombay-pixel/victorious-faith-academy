@@ -131,11 +131,15 @@ Deno.serve(async (req) => {
 
     if (body.action === "sync") {
       if (!body.authUserId) return json({ error: "Auth user ID is required for sync." }, 400);
-      const { error } = await adminClient.auth.admin.updateUserById(body.authUserId, {
+      const authUpdate: Record<string, unknown> = {
         email: internalEmail(body.studentId),
         email_confirm: true,
         user_metadata: { portal_role: "student", student_code: body.studentId, full_name: body.fullName },
-      });
+      };
+      // Only change an existing student's password when the admin explicitly
+      // supplies a new password (used by the existing-student reset tool).
+      if (body.password) authUpdate.password = body.password;
+      const { error } = await adminClient.auth.admin.updateUserById(body.authUserId, authUpdate);
       if (error) return json({ error: error.message }, 400);
       return json({ success: true, studentAuthUserId: body.authUserId });
     }

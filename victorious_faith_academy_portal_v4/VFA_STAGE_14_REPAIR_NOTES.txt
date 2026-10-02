@@ -1,0 +1,19 @@
+VFA Stage 14 targeted repair
+
+Starting point:
+- This ZIP is the exact VFA_STAGE_14_FINANCIAL_ONLY_FIX build supplied for the repair.
+
+Changed:
+1. admin.js
+   - Loads registration_date, sex, and enrollment_status from students.
+   - Saves registration_date, sex, and enrollment_status when a student is created/edited.
+   - Registration number remains derived from the existing Student ID; no students.registration_number column is queried.
+2. dashboard.js
+   - Keeps the existing financial school-year matching fix.
+   - Student portal now receives both class-targeted and All Students assignments/announcements and filters them to the student's class or global records.
+3. VFA_TARGETED_RLS_FIX.sql
+   - Repairs the admin RLS check and policies needed for admin suggestions, staff attendance, staff deletion, and financial records.
+   - Does not delete, reset, migrate, or overwrite student records.
+
+IMPORTANT:
+Run VFA_TARGETED_RLS_FIX.sql once in the Supabase SQL Editor using a database owner/admin session.
