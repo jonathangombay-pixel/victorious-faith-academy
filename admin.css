@@ -147,3 +147,42 @@
   .admin-app>.main::-webkit-scrollbar-track{background:transparent}
   .admin-app>.main::-webkit-scrollbar-thumb{background:#8b8179;border-radius:8px;border:2px solid var(--cream)}
 }
+
+/* Stage 14 polish: subtle feedback and motion without changing the layout or native scrollbars. */
+.primary,.secondary,.file-btn,.quick-grid button,.icon-btn,.link-button,.logout,.nav,.mobile-menu{
+  transition:transform .16s ease,box-shadow .2s ease,background-color .2s ease,border-color .2s ease,opacity .2s ease,color .2s ease;
+}
+.primary:hover:not(:disabled),.secondary:hover:not(:disabled),.file-btn:hover:not(:disabled),.quick-grid button:hover:not(:disabled),.icon-btn:hover:not(:disabled),.logout:hover:not(:disabled),.mobile-menu:hover:not(:disabled){
+  transform:translateY(-1px);
+  box-shadow:0 6px 16px rgba(44,26,18,.12);
+}
+.primary:active:not(:disabled),.secondary:active:not(:disabled),.file-btn:active:not(:disabled),.quick-grid button:active:not(:disabled),.icon-btn:active:not(:disabled),.logout:active:not(:disabled),.mobile-menu:active:not(:disabled){
+  transform:translateY(0) scale(.98);
+}
+.primary:disabled,.secondary:disabled,.file-btn:disabled,.quick-grid button:disabled,.icon-btn:disabled{
+  cursor:wait;
+  opacity:.72;
+  transform:none;
+  box-shadow:none;
+}
+.nav{transition:transform .16s ease,background-color .2s ease,color .2s ease;}
+.nav:hover:not(:disabled){transform:translateX(2px);}
+.section.active{animation:vfaSectionIn .22s ease both;}
+.modal:not(.hidden){animation:vfaFadeIn .18s ease both;}
+.modal-card{animation:vfaModalIn .22s ease both;}
+.vfa-button-spinner{display:inline-block;animation:vfaSpin .75s linear infinite;font-size:1.05em;}
+.vfa-button-success,.vfa-button-error{display:inline-block;font-weight:900;animation:vfaPop .2s ease both;}
+.vfa-toast-host{position:fixed;right:22px;bottom:22px;z-index:3000;display:flex;flex-direction:column;gap:10px;pointer-events:none;max-width:min(420px,calc(100vw - 32px));}
+.vfa-toast{background:#2c1a12;color:#fff;padding:13px 16px;border-radius:11px;box-shadow:0 12px 30px rgba(0,0,0,.2);font-size:13px;font-weight:700;line-height:1.4;opacity:0;transform:translateY(10px);transition:opacity .2s ease,transform .2s ease;border-left:4px solid var(--gold);}
+.vfa-toast.success{border-left-color:var(--green);}
+.vfa-toast.error{border-left-color:#a12a22;}
+.vfa-toast.show{opacity:1;transform:translateY(0);}
+@keyframes vfaSpin{to{transform:rotate(360deg)}}
+@keyframes vfaPop{from{opacity:0;transform:scale(.75)}to{opacity:1;transform:scale(1)}}
+@keyframes vfaFadeIn{from{opacity:0}to{opacity:1}}
+@keyframes vfaModalIn{from{opacity:0;transform:translateY(8px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes vfaSectionIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:520px){.vfa-toast-host{right:16px;bottom:16px;left:16px;max-width:none;}.vfa-toast{width:100%;}}
+@media(prefers-reduced-motion:reduce){
+  *,.primary,.secondary,.file-btn,.quick-grid button,.icon-btn,.link-button,.logout,.nav,.mobile-menu{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;}
+}

@@ -33,6 +33,56 @@ let reportMeta=get("vfaReportMeta",{});
 let currentAdmin=null;
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]));
+const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+function setButtonState(btn,label,disabled){
+  if(!btn)return;
+  if(disabled){
+    if(!btn.dataset.vfaOriginalHtml)btn.dataset.vfaOriginalHtml=btn.innerHTML;
+    btn.disabled=true;
+    btn.setAttribute("aria-busy","true");
+    btn.innerHTML=`<span class="vfa-button-spinner" aria-hidden="true">◌</span> ${esc(label)}`;
+  }else{
+    btn.disabled=false;
+    btn.removeAttribute("aria-busy");
+    if(btn.dataset.vfaOriginalHtml){btn.innerHTML=btn.dataset.vfaOriginalHtml;delete btn.dataset.vfaOriginalHtml;}
+  }
+}
+async function runButtonAction(btn,loadingLabel,successLabel,task){
+  if(btn?.disabled)return;
+  setButtonState(btn,loadingLabel,true);
+  try{
+    const result=await task();
+    if(btn){
+      btn.disabled=true;
+      btn.removeAttribute("aria-busy");
+      btn.innerHTML=`<span class="vfa-button-success" aria-hidden="true">✓</span> ${esc(successLabel)}`;
+      await sleep(850);
+      setButtonState(btn,"",false);
+    }
+    return result;
+  }catch(err){
+    if(btn){
+      btn.disabled=true;
+      btn.removeAttribute("aria-busy");
+      btn.innerHTML=`<span class="vfa-button-error" aria-hidden="true">!</span> ${esc("Not saved")}`;
+      await sleep(1100);
+      setButtonState(btn,"",false);
+    }
+    throw err;
+  }
+}
+function showVfaToast(message,type="success"){
+  let host=document.getElementById("vfaToastHost");
+  if(!host){host=document.createElement("div");host.id="vfaToastHost";host.className="vfa-toast-host";document.body.appendChild(host);}
+  const toast=document.createElement("div");
+  toast.className=`vfa-toast ${type==="error"?"error":"success"}`;
+  toast.setAttribute("role","status");
+  toast.textContent=message;
+  host.appendChild(toast);
+  requestAnimationFrame(()=>toast.classList.add("show"));
+  setTimeout(()=>{toast.classList.remove("show");setTimeout(()=>toast.remove(),220)},3200);
+}
+
 const today=()=>new Date().toISOString().slice(0,10);
 function save(){
  // Supabase is the source of truth. This cache is only for UI/session compatibility.
@@ -144,7 +194,7 @@ function renderStudents(){
  const cls=$("studentClass").value,q=($("studentSearch").value||"").trim().toLowerCase(),mode=$("studentSort")?.value||"alphabetical";
  const filtered=students.filter(s=>(!cls||cls==="All Classes"||s.grade===cls)&&(!q||`${s.name||""} ${s.id||""}`.toLowerCase().includes(q)));
  const list=sortStudentsForDisplay(filtered,mode);
- $("studentRows").innerHTML=list.map(s=>{const reg=s.registration_number??registrationFromCode(s.id);const displayId=s.id||"Assigned on save";const key=s.id||s._localId;return `<tr><td><strong>${esc(displayId)}</strong><small class="student-reg">${reg?`Registration ${esc(formatRegistrationNumber(reg))}`:""}</small></td><td><button class="link-button" onclick="openStudentRecord('${esc(key)}')">${esc(s.name)}</button></td><td>${esc(s.grade)}</td><td>${esc(s.registrationDate||"")}</td><td>${esc(s.sex||"—")}</td><td>${esc(s.enrollmentStatus||"—")}</td><td>${esc(s.parent||"")}</td><td>${esc(s.parentPhone||"")}</td><td><code>${esc(s.password||"")}</code></td><td>${esc(s.status||"Active")}</td><td class="row-actions"><button class="icon-btn" onclick="openStudentForm('${esc(key)}')">✏️</button>${s.dbId?`<button class="icon-btn danger" onclick="deleteStudent('${esc(s.id)}')">🗑️</button>`:""}</td></tr>`}).join("")||'<tr><td colspan="11" class="empty">No students in this class.</td></tr>';
+ $("studentRows").innerHTML=list.map(s=>{const reg=s.registration_number??registrationFromCode(s.id);const displayId=s.id||"Assigned on save";const key=s.id||s._localId;return `<tr><td><strong>${esc(displayId)}</strong><small class="student-reg">${reg?`Registration ${esc(formatRegistrationNumber(reg))}`:""}</small></td><td><button class="link-button" onclick="openStudentRecord('${esc(key)}')">${esc(s.name)}</button></td><td>${esc(s.grade)}</td><td>${esc(s.registrationDate||"")}</td><td>${esc(s.sex||"—")}</td><td>${esc(s.enrollmentStatus||"—")}</td><td>${esc(s.parent||"")}</td><td>${esc(s.parentPhone||"")}</td><td><code>${esc(s.password||"")}</code></td><td>${esc(s.status||"Active")}</td><td class="row-actions"><button class="icon-btn" onclick="openStudentForm('${esc(key)}')">✏️</button>${s.dbId?`<button class="icon-btn danger" onclick="deleteStudent('${esc(s.id)}',this)">🗑️</button>`:""}</td></tr>`}).join("")||'<tr><td colspan="11" class="empty">No students in this class.</td></tr>';
 }
 
 function openStudentForm(id){
@@ -167,17 +217,52 @@ function openStudentForm(id){
  <label class="full">ID Card Upload<div class="student-id-upload-box"><input id="studentIdCardUpload" name="idCard" type="file" accept="image/*"><small>Upload this student's ID card. The image will appear in the student's Profile tab.</small><div id="studentIdCardUploadPreview" class="student-id-upload-preview"></div></div></label>
  <div class="credential-box full"><strong>Portal Registration</strong><p>Registration Number: <code>${esc(s?.registration_number?formatRegistrationNumber(s.registration_number):"Assigned on save")}</code></p><p>Student ID: <code>${esc(s?.id||"Assigned automatically")}</code></p><p>Password: <code id="newStudentPassword">${esc(s?.password||"Will be generated automatically")}</code></p><small>The school's register numbers (001, 002, 003...) are permanent school-wide registration numbers. The portal Student ID combines the fixed prefix ${BASE_ID} with that three-digit registration number. Moving a student to another class does not change the ID, and deleted numbers are never recycled.</small></div>
  <div class="submit-row"><button class="primary" type="submit">${id?"Save Student":"Add Student"}</button></div></form>`);
- $("studentForm").onsubmit=e=>{
-   e.preventDefault();const f=new FormData(e.target);
-   const file=f.get("idCard");
-   const finish=()=>{pendingStudentIds.add(s?.dbId||s?.id||"pending");closeModal();fillSelect("studentClass",["All Classes",...classes],$("studentClass").value);renderAll();};
-   const applyCard=(target)=>{
-     if(file && file.size && file.type.startsWith("image/")){const reader=new FileReader();reader.onload=()=>{target.idCard=reader.result;finish();};reader.readAsDataURL(file);}
-     else finish();
+ $("studentForm").onsubmit=async e=>{
+   e.preventDefault();
+   const form=e.target, btn=form.querySelector('button[type="submit"]');
+   const f=new FormData(form), file=f.get("idCard");
+   const original=s?{...s}:null;
+   let target=s;
+   const applyFields=(obj)=>{
+     Object.assign(obj,{name:String(f.get("name")||"").trim(),grade:f.get("grade"),registrationDate:f.get("registrationDate")||today(),sex:f.get("sex")||"",enrollmentStatus:f.get("enrollmentStatus")||"New",parent:String(f.get("parent")||"").trim(),parentPhone:String(f.get("parentPhone")||"").trim(),sponsor:String(f.get("sponsor")||"").trim(),status:f.get("status"),schoolYear:String(f.get("schoolYear")||"").trim(),scholarship:f.get("scholarship")==="on"});
+     if(!obj.registration_number)obj.registration_number=registrationFromCode(obj.id);
    };
-   if(id){Object.assign(s,{name:f.get("name").trim(),grade:f.get("grade"),registrationDate:f.get("registrationDate")||today(),sex:f.get("sex")||"",enrollmentStatus:f.get("enrollmentStatus")||"New",parent:f.get("parent").trim(),parentPhone:f.get("parentPhone").trim(),sponsor:f.get("sponsor").trim(),status:f.get("status"),schoolYear:f.get("schoolYear").trim(),scholarship:f.get("scholarship")==="on"});if(!s.registration_number)s.registration_number=registrationFromCode(s.id);applyCard(s);}
-   else{const ns={id:"",_localId:`new-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,registration_number:null,name:f.get("name").trim(),grade:f.get("grade"),registrationDate:f.get("registrationDate")||today(),sex:f.get("sex")||"",enrollmentStatus:f.get("enrollmentStatus")||"New",parent:f.get("parent").trim(),parentPhone:f.get("parentPhone").trim(),sponsor:f.get("sponsor").trim(),status:f.get("status"),schoolYear:f.get("schoolYear").trim(),scholarship:f.get("scholarship")==="on",password:makePassword(),idCard:""};students.push(ns);applyCard(ns);}
+   if(id){
+     applyFields(s);
+   }else{
+     target={id:"",_localId:`new-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,registration_number:null,name:"",grade:f.get("grade"),registrationDate:today(),sex:"",enrollmentStatus:"New",parent:"",parentPhone:"",sponsor:"",status:"Active",schoolYear:"2026/2027",scholarship:false,password:makePassword(),idCard:""};
+     applyFields(target);
+     students.push(target);
+   }
 
+   const saveTarget=async()=>{
+     if(file && file.size && file.type.startsWith("image/")){
+       target.idCard=await new Promise((resolve,reject)=>{
+         const reader=new FileReader();
+         reader.onload=()=>resolve(reader.result);
+         reader.onerror=()=>reject(new Error("The selected ID card image could not be read."));
+         reader.readAsDataURL(file);
+       });
+     }
+     await syncVfaStudent(target);
+     pendingStudentIds.delete(target.dbId||target.id||target._localId);
+     await refreshRemoteContent();
+     renderAll();
+   };
+
+   try{
+     await runButtonAction(btn,"Saving Student…","✓ Student Saved",saveTarget);
+     closeModal();
+     fillSelect("studentClass",["All Classes",...classes],$("studentClass").value);
+     renderAll();
+     showVfaToast(id?"Student updated successfully.":"Student saved successfully.","success");
+   }catch(err){
+     if(id && original)Object.assign(s,original);
+     if(!id)students=students.filter(x=>x!==target);
+     renderAll();
+     console.error("VFA student save failed:",err);
+     showVfaToast("Student was not saved: "+(err?.message||err),"error");
+   }
  };
 }
 window.deleteStudent=async id=>{
@@ -265,21 +350,23 @@ function updateFeeTotal(){
 $("financeClass").onchange=()=>{renderFeeSetup();renderFinanceClass()};
 $("financeSearch").oninput=renderFinanceClass;
 $("financeYear").oninput=()=>{renderFeeSetup();renderFinanceClass()};
-$("saveFeeStructure").onclick=async()=>{
- const cls=classRows.find(c=>c.name===$("financeClass").value);
- if(!cls)return alert("Select a class first.");
+$("saveFeeStructure").onclick=async e=>{
+ const btn=e.currentTarget,cls=classRows.find(c=>c.name===$("financeClass").value);
+ if(!cls){showVfaToast("Select a class first.","error");return;}
  const schoolYear=$("financeYear").value.trim()||"2026/2027";
  const first=Number($("fee1").value||0),second=Number($("fee2").value||0),third=Number($("fee3").value||0);
- if([first,second,third].some(v=>!Number.isFinite(v)||v<0))return alert("Fee amounts cannot be negative.");
+ if([first,second,third].some(v=>!Number.isFinite(v)||v<0)){showVfaToast("Fee amounts cannot be negative.","error");return;}
  try{
-  await requireVerifiedAdminSession();
-  const {error}=await vfaSupabase.from("fee_structures").upsert({class_id:cls.id,school_year:schoolYear,first_payment:first,second_payment:second,third_payment:third,amount_due:first+second+third},{onConflict:"class_id,school_year"});
-  if(error)throw error;
-  await refreshRemoteContent();
-  renderFeeSetup();renderFinanceClass();
-  $("feeMessage").textContent="Fee structure saved to the school database.";
-  setTimeout(()=>$("feeMessage").textContent="",2500);
- }catch(err){console.error(err);alert("Could not save the fee structure: "+err.message)}
+  await runButtonAction(btn,"Saving Fee Structure…","✓ Fee Structure Saved",async()=>{
+   await requireVerifiedAdminSession();
+   const {error}=await vfaSupabase.from("fee_structures").upsert({class_id:cls.id,school_year:schoolYear,first_payment:first,second_payment:second,third_payment:third,amount_due:first+second+third},{onConflict:"class_id,school_year"});
+   if(error)throw error;
+   await refreshRemoteContent();renderFeeSetup();renderFinanceClass();
+   $("feeMessage").textContent="Fee structure saved to the school database.";
+  });
+  showVfaToast("Fee structure saved successfully.","success");
+  setTimeout(()=>$("feeMessage").textContent="",3000);
+ }catch(err){console.error(err);$("feeMessage").textContent="Could not save: "+(err?.message||err);showVfaToast("Could not save the fee structure: "+(err?.message||err),"error");}
 };
 function fmtLD(n){return `LD ${Number(n||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`;}
 function renderFinanceClass(){
@@ -302,7 +389,7 @@ window.openFinance=id=>{
  <div class="finance-summary"><div><span>Total Fees</span><strong>${fmtLD(x.required)}</strong></div><div><span>Total Paid</span><strong>${fmtLD(x.paid)}</strong></div><div><span>Balance</span><strong class="${x.balance===0?'success':'warning'}">${fmtLD(x.balance)}</strong></div></div>
  <div class="installment-grid">${ins.map(i=>`<div class="installment-card"><span>${i.period}</span><strong>${fmtLD(i.required)}</strong><small>Paid: ${fmtLD(i.paid)}</small><b>Balance: ${fmtLD(i.balance)}</b></div>`).join("")}</div>
  <div class="sheet-toolbar"><button class="primary" onclick="addPayment('${esc(id)}')">＋ Record Payment</button></div>
- <div class="table-wrap"><table class="spreadsheet"><thead><tr><th>Date</th><th>Payment</th><th>Amount Paid</th><th>Balance After Payment</th><th>Action</th></tr></thead><tbody>${x.rows.map(p=>`<tr><td>${esc(p.date)}</td><td>${esc(p.period||"")}</td><td>${fmtLD(p.amount)}</td><td>${fmtLD(p.balance)}</td><td><button class="icon-btn danger" onclick="deletePayment('${esc(p.id)}','${esc(id)}')">🗑️</button></td></tr>`).join("")||'<tr><td colspan="5" class="empty">No payments recorded yet.</td></tr>'}</tbody></table></div>`);
+ <div class="table-wrap"><table class="spreadsheet"><thead><tr><th>Date</th><th>Payment</th><th>Amount Paid</th><th>Balance After Payment</th><th>Action</th></tr></thead><tbody>${x.rows.map(p=>`<tr><td>${esc(p.date)}</td><td>${esc(p.period||"")}</td><td>${fmtLD(p.amount)}</td><td>${fmtLD(p.balance)}</td><td><button class="icon-btn danger" onclick="deletePayment('${esc(p.id)}','${esc(id)}',this)">🗑️</button></td></tr>`).join("")||'<tr><td colspan="5" class="empty">No payments recorded yet.</td></tr>'}</tbody></table></div>`);
 };
 window.addPayment=id=>{
  const s=students.find(x=>x.id===id);if(!s)return;
@@ -313,44 +400,105 @@ window.addPayment=id=>{
  const initial=ins.find(i=>i.period===periodEl.value)||ins.find(i=>i.balance>0)||ins[0]; if(initial)periodEl.value=initial.period;
  $("selectedPaymentBalance").textContent=fmtLD(initial?.balance||0);
  periodEl.onchange=e=>{const i=ins.find(z=>z.period===e.target.value);$("selectedPaymentBalance").textContent=fmtLD(i?.balance||0)};
- $("paymentForm").onsubmit=async e=>{
-  e.preventDefault();
-  const f=new FormData(e.target),period=f.get("period"),amt=Number(f.get("amount")),i=ins.find(z=>z.period===period);
-  if(!i||i.balance<=0)return alert("That payment period is already fully paid.");
-  if(!Number.isFinite(amt)||amt<=0||amt>i.balance)return alert(`Enter an amount up to ${fmtLD(i.balance)}.`);
-  try{
-   await requireVerifiedAdminSession();
-   const {error}=await vfaSupabase.from("financial_records").insert({student_id:s.dbId,school_year:x.schoolYear,record_date:f.get("date"),description:period,amount_due:i.required,amount_paid:amt});
-   if(error)throw error;
-   await refreshRemoteContent();closeModal();openFinance(id);renderFinanceClass();
-  }catch(err){console.error(err);alert("Could not save payment to the school database: "+err.message)}
- };
+  $("paymentForm").onsubmit=async e=>{
+   e.preventDefault();
+   const form=e.target,btn=form.querySelector('button[type="submit"]');
+   const f=new FormData(form),period=f.get("period"),amt=Number(f.get("amount")),i=ins.find(z=>z.period===period);
+   if(!i||i.balance<=0){showVfaToast("That payment period is already fully paid.","error");return;}
+   if(!Number.isFinite(amt)||amt<=0||amt>i.balance){showVfaToast(`Enter an amount up to ${fmtLD(i.balance)}.`,"error");return;}
+   try{
+    await runButtonAction(btn,"Saving Payment…","✓ Payment Saved",async()=>{
+     await requireVerifiedAdminSession();
+     const {error}=await vfaSupabase.from("financial_records").insert({student_id:s.dbId,school_year:x.schoolYear,record_date:f.get("date"),description:period,amount_due:i.required,amount_paid:amt});
+     if(error)throw error;
+     await refreshRemoteContent();
+     closeModal();openFinance(id);renderFinanceClass();
+    });
+    showVfaToast("Payment saved successfully.","success");
+   }catch(err){console.error(err);showVfaToast("Could not save payment: "+(err?.message||err),"error");}
+  };
 };
-window.deletePayment=async(pid,sid)=>{
+window.deletePayment=async(pid,sid,btn)=>{
  if(!confirm("Delete this payment record?"))return;
- try{await requireVerifiedAdminSession();const {error}=await vfaSupabase.from("financial_records").delete().eq("id",pid);if(error)throw error;await refreshRemoteContent();openFinance(sid);renderFinanceClass();}
- catch(err){alert("Could not delete payment from the school database: "+err.message)}
+ try{
+  await runButtonAction(btn,"Deleting Payment…","✓ Payment Deleted",async()=>{
+   await requireVerifiedAdminSession();
+   const {error}=await vfaSupabase.from("financial_records").delete().eq("id",pid);if(error)throw error;
+   await refreshRemoteContent();
+  });
+  openFinance(sid);renderFinanceClass();
+  showVfaToast("Payment deleted successfully.","success");
+ }catch(err){showVfaToast("Could not delete payment: "+(err?.message||err),"error");}
 };
+
 
 function downloadXls(filename,html){const blob=new Blob([`\ufeff${html}`],{type:"application/vnd.ms-excel"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 renderFeeSetup();
 
 $("examGrade").onchange=renderExams;$('addExamRow').onclick=()=>addExamRow();$('saveExams').onclick=saveExamSheet;
-function renderExams(){const cls=$("examGrade").value;const list=exams.filter(x=>x.grade===cls);$("examSheet").innerHTML=list.map(x=>`<tr data-id="${esc(x.id)}"><td><input class="sheet-input exam-date" type="date" value="${esc(x.date)}"></td><td><input class="sheet-input exam-subject" value="${esc(x.subject)}"></td><td><input class="sheet-input exam-time" value="${esc(x.time)}"></td><td><input class="sheet-input exam-room" value="${esc(x.room)}"></td><td><button class="icon-btn danger" onclick="removeExam('${esc(x.id)}')">🗑️</button></td></tr>`).join("")||'<tr><td colspan="5" class="empty">No exams scheduled for this class.</td></tr>';}
+function renderExams(){const cls=$("examGrade").value;const list=exams.filter(x=>x.grade===cls);$("examSheet").innerHTML=list.map(x=>`<tr data-id="${esc(x.id)}"><td><input class="sheet-input exam-date" type="date" value="${esc(x.date)}"></td><td><input class="sheet-input exam-subject" value="${esc(x.subject)}"></td><td><input class="sheet-input exam-time" value="${esc(x.time)}"></td><td><input class="sheet-input exam-room" value="${esc(x.room)}"></td><td><button class="icon-btn danger" onclick="removeExam('${esc(x.id)}',this)">🗑️</button></td></tr>`).join("")||'<tr><td colspan="5" class="empty">No exams scheduled for this class.</td></tr>';}
 function addExamRow(){exams.push({id:"NEW-"+Date.now()+"-"+Math.random().toString(36).slice(2),grade:$("examGrade").value,date:"",subject:"",time:"",room:""});renderExams();}
 async function reloadExamClass(classId,className){const {data,error}=await vfaSupabase.from("exam_timetable").select("id,exam_date,start_time,end_time,room,subject_id,class_id").eq("class_id",classId).order("exam_date").order("start_time");if(error)throw error;const subMap=Object.fromEntries(subjectRows.map(s=>[s.id,s.name]));exams=(data||[]).map(x=>({id:x.id,grade:className,date:x.exam_date||"",subject:subMap[x.subject_id]||"",time:[x.start_time,x.end_time].filter(Boolean).join(" - "),room:x.room||""}));renderExams();}
-async function saveExamSheet(){try{await requireVerifiedAdminSession();const className=$("examGrade").value;const classRow=classRows.find(c=>c.name===className);if(!classRow)throw new Error("Class not found.");const rows=[...document.querySelectorAll("#examSheet tr[data-id]")];for(const tr of rows){const id=tr.dataset.id;const x=exams.find(e=>e.id===id);if(!x)continue;x.date=tr.querySelector(".exam-date")?.value||"";x.subject=tr.querySelector(".exam-subject")?.value.trim()||"";x.time=tr.querySelector(".exam-time")?.value.trim()||"";x.room=tr.querySelector(".exam-room")?.value.trim()||"";const blank=!x.date&&!x.subject&&!x.time&&!x.room;if(blank){if(!String(id).startsWith("NEW-")){const {error}=await vfaSupabase.from("exam_timetable").delete().eq("id",id);if(error)throw error;}continue;}if(!x.date||!x.subject)throw new Error("Each timetable entry needs both a date and subject.");const sr=subjectRows.find(q=>String(q.name||"").trim().toLowerCase()===x.subject.toLowerCase());if(!sr)throw new Error(`Subject not found: ${x.subject}`);const parts=x.time.split(/\s*(?:-|–|—)\s*/);const payload={exam_date:x.date,start_time:parts[0]||null,end_time:parts[1]||null,room:x.room||null,subject_id:sr.id,class_id:classRow.id};if(String(id).startsWith("NEW-")){const {data,error}=await vfaSupabase.from("exam_timetable").insert(payload).select("id").single();if(error)throw error;if(!data?.id)throw new Error("The timetable entry was not returned after saving.");}else{const {data,error}=await vfaSupabase.from("exam_timetable").update(payload).eq("id",id).select("id").single();if(error)throw error;if(!data?.id)throw new Error("The timetable entry was not returned after updating.");}}await reloadExamClass(classRow.id,className);alert("Examination timetable saved to the school database.");}catch(err){console.error("VFA exam timetable save failed:",err);alert("Could not save timetable: "+(err?.message||err));}}
-window.removeExam=async id=>{if(String(id).startsWith("NEW-")){exams=exams.filter(x=>x.id!==id);renderExams();return;}if(!confirm("Delete this examination row? This will also remove it from the student panel."))return;try{await requireVerifiedAdminSession();const {error}=await vfaSupabase.from("exam_timetable").delete().eq("id",id);if(error)throw error;exams=exams.filter(x=>x.id!==id);renderExams();}catch(err){alert("Could not delete exam: "+(err?.message||err));}};
+async function saveExamSheet(){
+ const btn=$("saveExams");
+ try{
+  await runButtonAction(btn,"Saving Timetable…","✓ Timetable Saved",async()=>{
+   await requireVerifiedAdminSession();
+   const className=$("examGrade").value,classRow=classRows.find(c=>c.name===className);
+   if(!classRow)throw new Error("Class not found.");
+   const rows=[...document.querySelectorAll("#examSheet tr[data-id]")];
+   for(const tr of rows){
+    const id=tr.dataset.id,x=exams.find(e=>e.id===id);if(!x)continue;
+    x.date=tr.querySelector(".exam-date")?.value||"";x.subject=tr.querySelector(".exam-subject")?.value.trim()||"";x.time=tr.querySelector(".exam-time")?.value.trim()||"";x.room=tr.querySelector(".exam-room")?.value.trim()||"";
+    const blank=!x.date&&!x.subject&&!x.time&&!x.room;
+    if(blank){if(!String(id).startsWith("NEW-")){const {error}=await vfaSupabase.from("exam_timetable").delete().eq("id",id);if(error)throw error;}continue;}
+    if(!x.date||!x.subject)throw new Error("Each timetable entry needs both a date and subject.");
+    const sr=subjectRows.find(q=>String(q.name||"").trim().toLowerCase()===x.subject.toLowerCase());if(!sr)throw new Error(`Subject not found: ${x.subject}`);
+    const parts=x.time.split(/\s*(?:-|–|—)\s*/),payload={exam_date:x.date,start_time:parts[0]||null,end_time:parts[1]||null,room:x.room||null,subject_id:sr.id,class_id:classRow.id};
+    if(String(id).startsWith("NEW-")){const {data,error}=await vfaSupabase.from("exam_timetable").insert(payload).select("id").single();if(error)throw error;if(!data?.id)throw new Error("The timetable entry was not returned after saving.");}
+    else{const {data,error}=await vfaSupabase.from("exam_timetable").update(payload).eq("id",id).select("id").single();if(error)throw error;if(!data?.id)throw new Error("The timetable entry was not returned after updating.");}
+   }
+   await reloadExamClass(classRow.id,className);
+  });
+  showVfaToast("Examination timetable saved successfully.","success");
+ }catch(err){console.error("VFA exam timetable save failed:",err);showVfaToast("Could not save timetable: "+(err?.message||err),"error");}
+}
+window.removeExam=async(id,btn)=>{
+ if(String(id).startsWith("NEW-")){exams=exams.filter(x=>x.id!==id);renderExams();return;}
+ if(!confirm("Delete this examination row? This will also remove it from the student panel."))return;
+ try{
+  await runButtonAction(btn,"Deleting Exam…","✓ Exam Deleted",async()=>{
+   await requireVerifiedAdminSession();
+   const {error}=await vfaSupabase.from("exam_timetable").delete().eq("id",id);if(error)throw error;
+   exams=exams.filter(x=>x.id!==id);
+  });
+  renderExams();
+  showVfaToast("Examination row deleted successfully.","success");
+ }catch(err){showVfaToast("Could not delete exam: "+(err?.message||err),"error");}
+};
+
 function audienceClassId(audience){return audience&&audience!=="All Students"?(classRows.find(c=>c.name===audience)?.id||null):null;}
-function renderAssignments(){$("assignmentList").innerHTML=assignments.map(a=>`<div class="announcement-item"><div><strong>${esc(a.title)}</strong><span>${esc(a.subject||"")} • Due ${esc(a.due||"")} • ${esc(a.audience)}</span><p>${esc(a.body)}</p></div><button class="icon-btn danger" onclick="removeAssignment('${esc(a.id)}')">🗑️</button></div>`).join("")||'<p class="empty">No assignments published.</p>'}
+function renderAssignments(){$("assignmentList").innerHTML=assignments.map(a=>`<div class="announcement-item"><div><strong>${esc(a.title)}</strong><span>${esc(a.subject||"")} • Due ${esc(a.due||"")} • ${esc(a.audience)}</span><p>${esc(a.body)}</p></div><button class="icon-btn danger" onclick="removeAssignment('${esc(a.id)}',this)">🗑️</button></div>`).join("")||'<p class="empty">No assignments published.</p>'}
 $("addAssignment").onclick=async()=>{const title=$("assignmentTitle").value.trim(),audience=$("assignmentAudience").value,subject=$("assignmentSubject").value.trim(),due=$("assignmentDue").value,body=$("assignmentBody").value.trim();if(!title||!body)return alert("Enter an assignment title and instructions.");try{const sr=subjectRows.find(x=>x.name.toLowerCase()===subject.toLowerCase());const {data,error}=await vfaSafeInsert("assignments",{title,description:body,due_date:due||null,class_id:audienceClassId(audience),subject_id:sr?.id||null},["due_date","class_id","subject_id"]);if(error)throw error;await refreshRemoteContent();$("assignmentTitle").value="";$("assignmentSubject").value="";$("assignmentDue").value="";$("assignmentBody").value="";renderAssignments();}catch(err){alert("Could not publish assignment: "+err.message)}};
 window.removeAssignment=async id=>{if(!confirm("Delete this assignment?"))return;try{const {error}=await vfaSupabase.from("assignments").delete().eq("id",id);if(error)throw error;await refreshRemoteContent();renderAssignments();}catch(err){alert("Could not delete assignment: "+err.message)}};
-function renderAnnouncements(){$("announcementAdminList").innerHTML=announcements.map(a=>`<div class="announcement-item"><div><strong>${esc(a.title)}</strong><span>${esc(a.date)} • ${esc(a.audience)}</span><p>${esc(a.body)}</p></div><button class="icon-btn danger" onclick="removeAnnouncement('${esc(a.id)}')">🗑️</button></div>`).join("")||'<p class="empty">No announcements published.</p>'}
+function renderAnnouncements(){$("announcementAdminList").innerHTML=announcements.map(a=>`<div class="announcement-item"><div><strong>${esc(a.title)}</strong><span>${esc(a.date)} • ${esc(a.audience)}</span><p>${esc(a.body)}</p></div><button class="icon-btn danger" onclick="removeAnnouncement('${esc(a.id)}',this)">🗑️</button></div>`).join("")||'<p class="empty">No announcements published.</p>'}
 $("addAnnouncement").onclick=async()=>{const title=$("announcementTitle").value.trim(),date=$("announcementDate").value,audience=$("announcementAudience").value,body=$("announcementBody").value.trim();if(!title||!date||!body)return alert("Complete the announcement.");try{const createdAt=date?new Date(`${date}T12:00:00`).toISOString():new Date().toISOString();const {data,error}=await vfaSafeInsert("announcements",{title,message:body,target_class_id:audienceClassId(audience),publish_to_all:audience==="All Students",created_at:createdAt},["target_class_id","publish_to_all","created_at"]);if(error)throw error;await refreshRemoteContent();$("announcementTitle").value="";$("announcementBody").value="";renderAnnouncements();renderHome();}catch(err){alert("Could not publish announcement: "+err.message)}};
 window.removeAnnouncement=async id=>{if(!confirm("Delete this announcement?"))return;try{const {error}=await vfaSupabase.from("announcements").delete().eq("id",id);if(error)throw error;await refreshRemoteContent();renderAnnouncements();renderHome();}catch(err){alert("Could not delete announcement: "+err.message)}};
 
 async function loadScaleStatements(){try{const {data,error}=await vfaSupabase.from("scale_settings").select("statements").eq("id",1).maybeSingle();if(error)throw error;if(Array.isArray(data?.statements)&&data.statements.length===5)scaleStatements=data.statements.map(x=>String(x||"").trim());}catch(err){console.warn("Scale settings could not be loaded:",err)}for(let i=1;i<=5;i++){const el=$("scaleStatement"+i);if(el)el.value=scaleStatements[i-1]||"";}}
-$("saveScaleStatements")?.addEventListener("click",async()=>{const vals=[];for(let i=1;i<=5;i++){const v=$("scaleStatement"+i)?.value.trim();if(!v){$("scaleSettingsMessage").textContent=`Statement ${i} cannot be empty.`;return}vals.push(v)}const btn=$("saveScaleStatements");btn.disabled=true;try{const {error}=await vfaSupabase.from("scale_settings").upsert({id:1,statements:vals,updated_at:new Date().toISOString()});if(error)throw error;scaleStatements=vals;$("scaleSettingsMessage").textContent="Saved successfully."}catch(err){$("scaleSettingsMessage").textContent="Could not save: "+err.message}btn.disabled=false;});
+$("saveScaleStatements")?.addEventListener("click",async e=>{
+ const vals=[],btn=e.currentTarget;
+ for(let i=1;i<=5;i++){const v=$("scaleStatement"+i)?.value.trim();if(!v){$("scaleSettingsMessage").textContent=`Statement ${i} cannot be empty.`;showVfaToast(`Statement ${i} cannot be empty.`,"error");return}vals.push(v);}
+ try{
+  await runButtonAction(btn,"Saving Statements…","✓ Statements Saved",async()=>{
+   await requireVerifiedAdminSession();
+   const {error}=await vfaSupabase.from("scale_settings").upsert({id:1,statements:vals,updated_at:new Date().toISOString()});
+   if(error)throw error;
+   scaleStatements=vals;$("scaleSettingsMessage").textContent="Saved successfully.";
+  });
+  showVfaToast("Scale statements saved successfully.","success");
+ }catch(err){$("scaleSettingsMessage").textContent="Could not save: "+(err?.message||err);showVfaToast("Could not save statements: "+(err?.message||err),"error");}
+});
 function formatScaleDate(value){
  if(!value)return "Date not available";
  const d=new Date(value);
@@ -380,8 +528,8 @@ function renderScale(){
     </div>
     <div class="scale-response-actions">
       <button class="icon-btn primary-outline" onclick="viewScaleResponse('${esc(r.id)}')">View response</button>
-      <button class="icon-btn" onclick="markScaleReviewed('${esc(r.id)}')">${r.reviewed?"✓ Reviewed":"Mark reviewed"}</button>
-      <button class="icon-btn danger" onclick="deleteScaleResponse('${esc(r.id)}')">🗑️ Delete</button>
+      <button class="icon-btn" >${r.reviewed?"✓ Reviewed":"Mark reviewed"}</button>
+      <button class="icon-btn danger" onclick="deleteScaleResponse('${esc(r.id)}',this)">🗑️ Delete</button>
     </div>
   </div>`;
  }).join("")||'<p class="empty">No Scale Your Child responses yet.</p>'
@@ -407,19 +555,102 @@ window.viewScaleResponse=id=>{
    <div class="scale-review-status"><strong>Status:</strong> ${data.reviewed?"Reviewed":"Not reviewed"}</div>
   </div>`);
 };
-window.markScaleReviewed=async id=>{const r=scaleResponses.find(x=>x.id===id);if(!r)return;const data=normalizeScaleResponse(r.response);const response={...(r.response&&typeof r.response==="object"?r.response:{}),checks:data.checks,note:data.note,reviewed:!data.reviewed};try{const {error}=await vfaSupabase.from("scale_your_child").update({response}).eq("id",id);if(error)throw error;r.reviewed=response.reviewed;r.response=response;renderScale();renderHome();}catch(err){alert("Could not update response: "+err.message)}};
-window.deleteScaleResponse=async id=>{const r=scaleResponses.find(x=>x.id===id);if(!r)return;const student=r.studentName||"this student";if(!confirm(`Delete this Scale Your Child response from ${student}?\n\nThis will permanently remove the parent response from the school database.`))return;try{const {error}=await vfaSupabase.from("scale_your_child").delete().eq("id",id);if(error)throw error;scaleResponses=scaleResponses.filter(x=>x.id!==id);renderScale();renderHome();alert("The parent response was deleted.");}catch(err){console.error(err);alert("Could not delete response: "+err.message)}};
-function renderSuggestions(){$("suggestionList").innerHTML=suggestions.map(s=>`<div class="announcement-item"><div><strong>${esc(s.title)}</strong><span>To: ${esc(s.audience)} • ${esc(s.date)} • By ${esc(s.by)}</span><p>${esc(s.body)}</p></div><button class="icon-btn danger" onclick="removeSuggestion('${esc(s.id)}')">🗑️</button></div>`).join("")||'<p class="empty">No suggestions sent.</p>'}
+window.markScaleReviewed=async(id,btn)=>{
+ const r=scaleResponses.find(x=>x.id===id);if(!r)return;
+ const data=normalizeScaleResponse(r.response),response={...(r.response&&typeof r.response==="object"?r.response:{}),checks:data.checks,note:data.note,reviewed:!data.reviewed};
+ try{
+  await runButtonAction(btn,data.reviewed?"Marking Reviewed…":"Marking Unreviewed…",data.reviewed?"✓ Reviewed":"✓ Updated",async()=>{
+   await requireVerifiedAdminSession();
+   const {error}=await vfaSupabase.from("scale_your_child").update({response}).eq("id",id);if(error)throw error;
+   r.reviewed=response.reviewed;r.response=response;
+  });
+  renderScale();renderHome();
+  showVfaToast(response.reviewed?"Response marked reviewed.":"Response marked unreviewed.","success");
+ }catch(err){showVfaToast("Could not update response: "+(err?.message||err),"error");}
+};
+window.deleteScaleResponse=async(id,btn)=>{
+ const r=scaleResponses.find(x=>x.id===id);if(!r)return;
+ const student=r.studentName||"this student";
+ if(!confirm(`Delete this Scale Your Child response from ${student}?\n\nThis will permanently remove the parent response from the school database.`))return;
+ try{
+  await runButtonAction(btn,"Deleting Response…","✓ Response Deleted",async()=>{
+   await requireVerifiedAdminSession();
+   const {error}=await vfaSupabase.from("scale_your_child").delete().eq("id",id);if(error)throw error;
+   scaleResponses=scaleResponses.filter(x=>x.id!==id);
+  });
+  renderScale();renderHome();
+  showVfaToast("Parent response deleted successfully.","success");
+ }catch(err){console.error(err);showVfaToast("Could not delete response: "+(err?.message||err),"error");}
+};
+
+function renderSuggestions(){$("suggestionList").innerHTML=suggestions.map(s=>`<div class="announcement-item"><div><strong>${esc(s.title)}</strong><span>To: ${esc(s.audience)} • ${esc(s.date)} • By ${esc(s.by)}</span><p>${esc(s.body)}</p></div><button class="icon-btn danger" onclick="removeSuggestion('${esc(s.id)}',this)">🗑️</button></div>`).join("")||'<p class="empty">No suggestions sent.</p>'}
 $("addSuggestion").onclick=async()=>{const audience=$("suggestionAudience").value,title=$("suggestionTitle").value.trim(),body=$("suggestionBody").value.trim();if(!title||!body)return alert("Enter a title and message.");try{const {data,error}=await vfaSupabase.from("admin_suggestions").insert(targets.map(st=>({student_id:st.dbId,title,message:body})));if(error)throw error;await refreshRemoteContent();$("suggestionTitle").value="";$("suggestionBody").value="";renderSuggestions();}catch(err){alert("Could not send suggestion: "+err.message)}};
 window.removeSuggestion=async id=>{if(!confirm("Delete this suggestion?"))return;try{const {error}=await vfaSupabase.from("admin_suggestions").delete().eq("id",id);if(error)throw error;await refreshRemoteContent();renderSuggestions();}catch(err){alert("Could not delete suggestion: "+err.message)}};
 
 $("staffDate").onchange=renderStaff;$('addStaff').onclick=()=>openStaffForm();
 function formatCheckInTime(value){if(!value)return "";const d=new Date(value);if(Number.isNaN(d.getTime()))return String(value).slice(0,5);return d.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",hour12:false});}
-function renderStaff(){const date=$("staffDate").value||today();$("staffRows").innerHTML=staff.map(s=>{const rec=staffAttendance.find(r=>r.staffId===s.id&&r.date===date);const checkIn=rec?.time?formatCheckInTime(rec.time):"";return `<tr><td><strong>${esc(s.name)}</strong></td><td>${esc(s.position)}</td><td><select class="staff-status" data-id="${esc(s.id)}"><option value="present" ${rec?.status==="present"?"selected":""}>Present</option><option value="late" ${rec?.status==="late"?"selected":""}>Late</option><option value="absent" ${rec?.status==="absent"?"selected":""}>Absent</option></select></td><td><input class="staff-checkin" data-id="${esc(s.id)}" type="time" value="${esc(checkIn)}" aria-label="Check-in time for ${esc(s.name)}"></td><td><button class="secondary small" onclick="saveStaffStatus('${esc(s.id)}')">Save</button> <button class="icon-btn" onclick="openStaffForm('${esc(s.id)}')">✏️</button><button class="icon-btn danger" onclick="deleteStaff('${esc(s.id)}')">🗑️</button></td></tr>`}).join("")||'<tr><td colspan="5" class="empty">No staff or teachers added yet.</td></tr>';}
+function renderStaff(){const date=$("staffDate").value||today();$("staffRows").innerHTML=staff.map(s=>{const rec=staffAttendance.find(r=>r.staffId===s.id&&r.date===date);const checkIn=rec?.time?formatCheckInTime(rec.time):"";return `<tr><td><strong>${esc(s.name)}</strong></td><td>${esc(s.position)}</td><td><select class="staff-status" data-id="${esc(s.id)}"><option value="present" ${rec?.status==="present"?"selected":""}>Present</option><option value="late" ${rec?.status==="late"?"selected":""}>Late</option><option value="absent" ${rec?.status==="absent"?"selected":""}>Absent</option></select></td><td><input class="staff-checkin" data-id="${esc(s.id)}" type="time" value="${esc(checkIn)}" aria-label="Check-in time for ${esc(s.name)}"></td><td><button class="secondary small" onclick="saveStaffStatus('${esc(s.id)}')">Save</button> <button class="icon-btn" onclick="openStaffForm('${esc(s.id)}')">✏️</button><button class="icon-btn danger" onclick="deleteStaff('${esc(s.id)}',this)">🗑️</button></td></tr>`}).join("")||'<tr><td colspan="5" class="empty">No staff or teachers added yet.</td></tr>';}
 async function upsertAttendance(staffId,date,status,checkInTime){const {data:existing,error:probeError}=await vfaSupabase.from("staff_attendance").select("id,check_in_time").eq("staff_id",staffId).eq("attendance_date",date).maybeSingle();if(probeError)throw probeError;const normalized=String(status||"").toLowerCase();let checkIn=null;if(normalized==="present"||normalized==="late"){if(checkInTime){const parsed=new Date(`${date}T${checkInTime}:00`);if(Number.isNaN(parsed.getTime()))throw new Error("Enter a valid check-in time.");checkIn=parsed.toISOString();}else checkIn=existing?.check_in_time||new Date().toISOString();}const payload={staff_id:staffId,attendance_date:date,status:normalized,check_in_time:checkIn};if(existing?.id)return await vfaSupabase.from("staff_attendance").update(payload).eq("id",existing.id).select("*").single();return await vfaSupabase.from("staff_attendance").insert(payload).select("*").single();}
-window.saveStaffStatus=async id=>{const date=$("staffDate").value||today();const select=document.querySelector(`.staff-status[data-id="${CSS.escape(id)}"]`);const timeInput=document.querySelector(`.staff-checkin[data-id="${CSS.escape(id)}"]`);if(!select||!timeInput)return;try{await requireVerifiedAdminSession();const result=await upsertAttendance(id,date,select.value,timeInput.value);if(result.error)throw result.error;const saved=result.data;const old=staffAttendance.find(r=>r.staffId===id&&r.date===date);const normalized=String(select.value).toLowerCase();if(old){old.status=normalized;old.time=saved?.check_in_time||"";}else staffAttendance.push({id:saved.id,staffId:id,date,status:normalized,time:saved?.check_in_time||""});renderStaff();}catch(err){console.error(err);alert("Could not save attendance: "+(err?.message||err));}};
-function openStaffForm(id){const s=staff.find(x=>x.id===id);openModal(id?"Edit Staff / Teacher":"Add Staff / Teacher",`<form id="staffForm" class="form-grid student-form"><label class="full">Full Name<input name="name" value="${esc(s?.name||"")}" required></label><label>Position<input name="position" value="${esc(s?.position||"")}" placeholder="Teacher, Principal, Secretary..." required></label><label>Phone<input name="phone" value="${esc(s?.phone||"")}" placeholder="Phone number"></label><div class="submit-row"><button class="primary" type="submit">${id?"Save":"Add Staff"}</button></div></form>`);$("staffForm").onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);const name=String(f.get("name")||"").trim(),position=String(f.get("position")||"").trim(),phone=String(f.get("phone")||"").trim()||null;if(!name||!position)return alert("Enter the staff member name and position.");try{await requireVerifiedAdminSession();if(id){const {data,error}=await vfaSupabase.from("staff").update({name,position,phone}).eq("id",id).select("id,name,position,phone,email,is_active").single();if(error)throw error;staff=staff.map(x=>x.id===id?{...x,id:data.id,dbId:data.id,name:data.name,position:data.position||"",phone:data.phone||"",email:data.email||""}:x);}else{const {data,error}=await vfaSupabase.from("staff").insert({name,position,phone,is_active:true}).select("id,name,position,phone,email,is_active").single();if(error)throw error;if(!data?.id)throw new Error("Staff member was not returned after saving.");staff.push({dbId:data.id,id:data.id,name:data.name,position:data.position||"",phone:data.phone||"",email:data.email||""});}closeModal();renderStaff();renderHome();}catch(err){console.error("VFA staff save failed:",err);alert("Could not save staff member: "+(err?.message||err));}};}
-window.deleteStaff=async id=>{const s=staff.find(x=>x.id===id);if(!s||!confirm(`Delete ${s.name} from staff?`))return;try{await requireVerifiedAdminSession();const attendanceDelete=await vfaSupabase.from("staff_attendance").delete().eq("staff_id",id);if(attendanceDelete.error)throw attendanceDelete.error;const clearSponsor=await vfaSupabase.from("students").update({sponsor_id:null}).eq("sponsor_id",id);if(clearSponsor.error&&!/column|schema cache|does not exist/i.test(String(clearSponsor.error.message||"")))throw clearSponsor.error;const {error}=await vfaSupabase.from("staff").delete().eq("id",id);if(error)throw error;staff=staff.filter(x=>x.id!==id);staffAttendance=staffAttendance.filter(x=>x.staffId!==id);students.forEach(st=>{if(st.sponsorId===id){st.sponsorId="";st.sponsor="";}});renderStaff();renderHome();}catch(err){console.error("VFA staff delete failed:",err);alert("Could not delete staff member: "+(err?.message||err));}};
+window.saveStaffStatus=async(id,btn)=>{
+ const date=$("staffDate").value||today(),select=document.querySelector(`.staff-status[data-id="${CSS.escape(id)}"]`),timeInput=document.querySelector(`.staff-checkin[data-id="${CSS.escape(id)}"]`);
+ if(!select||!timeInput)return;
+ try{
+  await runButtonAction(btn,"Saving Attendance…","✓ Attendance Saved",async()=>{
+   await requireVerifiedAdminSession();
+   const result=await upsertAttendance(id,date,select.value,timeInput.value);if(result.error)throw result.error;
+   const saved=result.data,old=staffAttendance.find(r=>r.staffId===id&&r.date===date),normalized=String(select.value).toLowerCase();
+   if(old){old.status=normalized;old.time=saved?.check_in_time||"";}else staffAttendance.push({id:saved.id,staffId:id,date,status:normalized,time:saved?.check_in_time||""});
+  });
+  renderStaff();
+  showVfaToast("Attendance saved successfully.","success");
+ }catch(err){console.error(err);showVfaToast("Could not save attendance: "+(err?.message||err),"error");}
+};
+
+function openStaffForm(id){
+ const s=staff.find(x=>x.id===id);
+ openModal(id?"Edit Staff / Teacher":"Add Staff / Teacher",`<form id="staffForm" class="form-grid student-form"><label class="full">Full Name<input name="name" value="${esc(s?.name||"")}" required></label><label>Position<input name="position" value="${esc(s?.position||"")}" placeholder="Teacher, Principal, Secretary..." required></label><label>Phone<input name="phone" value="${esc(s?.phone||"")}" placeholder="Phone number"></label><div class="submit-row"><button class="primary" type="submit">${id?"Save":"Add Staff"}</button></div></form>`);
+ $("staffForm").onsubmit=async e=>{
+  e.preventDefault();
+  const form=e.target,btn=form.querySelector('button[type="submit"]'),f=new FormData(form);
+  const name=String(f.get("name")||"").trim(),position=String(f.get("position")||"").trim(),phone=String(f.get("phone")||"").trim()||null;
+  if(!name||!position){showVfaToast("Enter the staff member name and position.","error");return;}
+  try{
+   await runButtonAction(btn,id?"Saving Staff…":"Adding Staff…",id?"✓ Staff Saved":"✓ Staff Added",async()=>{
+    await requireVerifiedAdminSession();
+    if(id){
+     const {data,error}=await vfaSupabase.from("staff").update({name,position,phone}).eq("id",id).select("id,name,position,phone,email,is_active").single();
+     if(error)throw error;
+     staff=staff.map(x=>x.id===id?{...x,id:data.id,dbId:data.id,name:data.name,position:data.position||"",phone:data.phone||"",email:data.email||""}:x);
+    }else{
+     const {data,error}=await vfaSupabase.from("staff").insert({name,position,phone,is_active:true}).select("id,name,position,phone,email,is_active").single();
+     if(error)throw error;if(!data?.id)throw new Error("Staff member was not returned after saving.");
+     staff.push({dbId:data.id,id:data.id,name:data.name,position:data.position||"",phone:data.phone||"",email:data.email||""});
+    }
+   });
+   closeModal();renderStaff();renderHome();
+   showVfaToast(id?"Staff member updated successfully.":"Staff member added successfully.","success");
+  }catch(err){console.error("VFA staff save failed:",err);showVfaToast("Could not save staff member: "+(err?.message||err),"error");}
+ };
+}
+
+window.deleteStaff=async(id,btn)=>{
+ const s=staff.find(x=>x.id===id);if(!s||!confirm(`Delete ${s.name} from staff?`))return;
+ try{
+  await runButtonAction(btn,"Deleting Staff…","✓ Staff Deleted",async()=>{
+   await requireVerifiedAdminSession();
+   const attendanceDelete=await vfaSupabase.from("staff_attendance").delete().eq("staff_id",id);if(attendanceDelete.error)throw attendanceDelete.error;
+   const clearSponsor=await vfaSupabase.from("students").update({sponsor_id:null}).eq("sponsor_id",id);
+   if(clearSponsor.error&&!/column|schema cache|does not exist/i.test(String(clearSponsor.error.message||"")))throw clearSponsor.error;
+   const {error}=await vfaSupabase.from("staff").delete().eq("id",id);if(error)throw error;
+   staff=staff.filter(x=>x.id!==id);staffAttendance=staffAttendance.filter(x=>x.staffId!==id);
+   students.forEach(st=>{if(st.sponsorId===id){st.sponsorId="";st.sponsor="";}});
+   await refreshRemoteContent();
+  });
+  renderStaff();renderHome();
+  showVfaToast("Staff member deleted successfully.","success");
+ }catch(err){console.error("VFA staff delete failed:",err);showVfaToast("Could not delete staff member: "+(err?.message||err),"error");}
+};
+
 function openModal(title,html){$("modalTitle").textContent=title;$("modalBody").innerHTML=html;$("modal").classList.remove("hidden")}
 function closeModal(){$("modal").classList.add("hidden")}
 $("closeModal").onclick=closeModal;$("modal").onclick=e=>{if(e.target.id==="modal")closeModal()};
@@ -529,37 +760,42 @@ function nextStudentCode(){
   const nums=students.map(s=>Number(String(s.id||"").match(/(\d{3})$/)?.[1]||0)).filter(Number.isFinite);
   const next=Math.max(0,...nums)+1; return `0020172${String(next).padStart(3,"0")}`;
 }
-async function syncVfaStudents(){
-  for(const s of students){
-    const cls=classRows.find(c=>c.name===s.grade), sponsor=staff.find(t=>t.name===s.sponsor);
-    const payload={full_name:s.name,class_id:cls?.id||null,sponsor_id:sponsor?.id||null,parent_name:s.parent||null,parent_phone:s.parentPhone||null,school_year:s.schoolYear||null,is_active:s.status!=="Inactive"};
-    if(!s.dbId){
-      if(!s.id)s.id=nextStudentCode();
-      const {data:row,error}=await vfaSupabase.from("students").insert({...payload,student_code:s.id}).select("*").single();
-      if(error)throw error; s.dbId=row.id;s.auth_user_id=row.auth_user_id||null;
-    }else{
-      const {data:row,error}=await vfaSupabase.from("students").update({...payload,student_code:s.id}).eq("id",s.dbId).select("*").single();
-      if(error)throw error; s.auth_user_id=row.auth_user_id||s.auth_user_id||null;
-    }
-
-    // Stage 11: after the database row is saved, create/sync the student Auth account
-    // through the server-side Edge Function. The password is never stored in the students table.
-    const action = s.auth_user_id ? "sync" : "create";
-    const { data: authData, error: authError } = await vfaSupabase.functions.invoke("bright-api", {
-      body: {
-        action,
-        studentDbId: s.dbId,
-        studentId: s.id,
-        fullName: s.name,
-        password: s.password || undefined,
-        authUserId: s.auth_user_id || undefined
-      }
-    });
-    if(authError) throw new Error(authError.message || "Student portal account could not be created.");
-    if(authData?.error) throw new Error(authData.error);
-    if(authData?.studentAuthUserId) s.auth_user_id = authData.studentAuthUserId;
-    s.auth_sync_error = false;
+async function syncVfaStudent(s){
+  const cls=classRows.find(c=>c.name===s.grade), sponsor=staff.find(t=>t.name===s.sponsor);
+  const payload={full_name:s.name,class_id:cls?.id||null,sponsor_id:sponsor?.id||null,parent_name:s.parent||null,parent_phone:s.parentPhone||null,school_year:s.schoolYear||null,is_active:s.status!=="Inactive"};
+  if(!s.dbId){
+    if(!s.id)s.id=nextStudentCode();
+    const {data:row,error}=await vfaSupabase.from("students").insert({...payload,student_code:s.id}).select("*").single();
+    if(error)throw error;
+    s.dbId=row.id;
+    s.auth_user_id=row.auth_user_id||null;
+  }else{
+    const {data:row,error}=await vfaSupabase.from("students").update({...payload,student_code:s.id}).eq("id",s.dbId).select("*").single();
+    if(error)throw error;
+    s.auth_user_id=row.auth_user_id||s.auth_user_id||null;
   }
+
+  // Stage 11: after the database row is saved, create/sync the student Auth account.
+  // The password is never stored in the students table.
+  const action = s.auth_user_id ? "sync" : "create";
+  const { data: authData, error: authError } = await vfaSupabase.functions.invoke("bright-api", {
+    body: {
+      action,
+      studentDbId: s.dbId,
+      studentId: s.id,
+      fullName: s.name,
+      password: s.password || undefined,
+      authUserId: s.auth_user_id || undefined
+    }
+  });
+  if(authError) throw new Error(authError.message || "Student portal account could not be created.");
+  if(authData?.error) throw new Error(authData.error);
+  if(authData?.studentAuthUserId) s.auth_user_id = authData.studentAuthUserId;
+  s.auth_sync_error = false;
+  return s;
+}
+async function syncVfaStudents(){
+  for(const s of students) await syncVfaStudent(s);
 }
 async function syncVfaGrades(){
   const by=Object.fromEntries(students.map(x=>[x.id,x]));
@@ -577,21 +813,147 @@ async function syncVfaGrades(){
   }
 }
 
-// Replace legacy button handlers that depended on tables/RPCs not present in the new database.
-$("saveStudents").onclick=async()=>{try{await requireVerifiedAdminSession();if(!students.length)return alert("There are no students to save.");await syncVfaStudents();await refreshRemoteContent();renderAll();alert("Students saved successfully to the school database.");}catch(err){console.error(err);alert("The students could not be saved: "+err.message)}};
-window.deleteStudent=async id=>{const s=students.find(x=>x.id===id);if(!s||!confirm(`Delete ${s.name}? This removes the student record and portal login from Supabase.`))return;try{if(s.auth_user_id&&s.dbId){const {data:functionData,error:functionError}=await vfaSupabase.functions.invoke("bright-api",{body:{action:"delete",studentDbId:s.dbId,authUserId:s.auth_user_id}});if(functionError)throw new Error(functionError.message||"Student account deletion failed.");if(functionData?.error)throw new Error(functionData.error);}if(s.dbId){const {error}=await vfaSupabase.from("students").delete().eq("id",s.dbId);if(error)throw error;}students=students.filter(x=>x.id!==id);await refreshRemoteContent();renderAll();alert("Student deleted successfully from the school database.");}catch(err){alert("Could not delete student: "+err.message)}};
+// Database-backed admin actions use the real Supabase request for their loading/success state.
+$("saveStudents").onclick=async e=>{
+  const btn=e.currentTarget;
+  if(!students.length){showVfaToast("There are no students to save.","error");return;}
+  try{
+    await runButtonAction(btn,"Saving Students…","✓ Students Saved",async()=>{
+      await requireVerifiedAdminSession();
+      await syncVfaStudents();
+      await syncVfaGrades();
+      pendingStudentIds.clear();
+      await refreshRemoteContent();
+      renderAll();
+    });
+    showVfaToast("Students saved successfully.","success");
+  }catch(err){console.error("Student save failed:",err);showVfaToast("Students could not be saved: "+(err?.message||err),"error");}
+};
 
-$("saveAllGrades").onclick=async()=>{document.querySelectorAll(".grade-cell").forEach(i=>{const v=i.value.trim();if(v==="")delete gradesData[i.dataset.key];else gradesData[i.dataset.key]=Math.max(0,Math.min(100,Number(v)))});try{await syncVfaGrades();await refreshRemoteContent();renderGrades();alert("Grade sheet saved to the school database.");}catch(err){alert("Could not save grades: "+err.message)}};
+window.deleteStudent=async(id,btn)=>{
+  const s=students.find(x=>x.id===id);if(!s)return;
+  if(!confirm(`Delete ${s.name}? This removes the student record and portal login from Supabase.`))return;
+  try{
+    await runButtonAction(btn,"Deleting Student…","✓ Student Deleted",async()=>{
+      await requireVerifiedAdminSession();
+      if(s.auth_user_id&&s.dbId){
+        const {data:functionData,error:functionError}=await vfaSupabase.functions.invoke("bright-api",{body:{action:"delete",studentDbId:s.dbId,authUserId:s.auth_user_id}});
+        if(functionError)throw new Error(functionError.message||"Student account deletion failed.");
+        if(functionData?.error)throw new Error(functionData.error);
+      }
+      if(s.dbId){const {error}=await vfaSupabase.from("students").delete().eq("id",s.dbId);if(error)throw error;}
+      students=students.filter(x=>x.id!==id);
+      await refreshRemoteContent();
+    });
+    renderAll();
+    showVfaToast("Student deleted successfully.","success");
+  }catch(err){console.error(err);showVfaToast("Student could not be deleted: "+(err?.message||err),"error");}
+};
 
-$("addAssignment").onclick=async()=>{const title=$("assignmentTitle").value.trim(),audience=$("assignmentAudience").value,subject=$("assignmentSubject").value.trim(),due=$("assignmentDue").value,body=$("assignmentBody").value.trim();if(!title||!body)return alert("Enter an assignment title and instructions.");try{const {error}=await vfaSupabase.from("assignments").insert({title,description:body,due_date:due||null,subject_id:subjectRows.find(x=>x.name===subject)?.id||null,class_id:audienceClassId(audience)});if(error)throw error;await refreshRemoteContent();$("assignmentTitle").value="";$("assignmentSubject").value="";$("assignmentDue").value="";$("assignmentBody").value="";renderAssignments();}catch(err){alert("Could not publish assignment: "+err.message)}};
-window.removeAssignment=async id=>{if(!confirm("Delete this assignment?"))return;try{const {error}=await vfaSupabase.from("assignments").delete().eq("id",id);if(error)throw error;await refreshRemoteContent();renderAssignments();}catch(err){alert("Could not delete assignment: "+err.message)}};
-$("addAnnouncement").onclick=async()=>{const title=$("announcementTitle").value.trim(),date=$("announcementDate").value,audience=$("announcementAudience").value,body=$("announcementBody").value.trim();if(!title||!body)return alert("Complete the announcement.");try{const {error}=await vfaSupabase.from("announcements").insert({title,message:body,target_class_id:audienceClassId(audience),created_at:date?new Date(`${date}T12:00:00`).toISOString():new Date().toISOString()});if(error)throw error;await refreshRemoteContent();$("announcementTitle").value="";$("announcementBody").value="";renderAnnouncements();renderHome();}catch(err){alert("Could not publish announcement: "+err.message)}};
-window.removeAnnouncement=async id=>{if(!confirm("Delete this announcement?"))return;try{const {error}=await vfaSupabase.from("announcements").delete().eq("id",id);if(error)throw error;await refreshRemoteContent();renderAnnouncements();renderHome();}catch(err){alert("Could not delete announcement: "+err.message)}};
-$("addSuggestion").onclick=async()=>{const audience=$("suggestionAudience").value,title=$("suggestionTitle").value.trim(),body=$("suggestionBody").value.trim();if(!title||!body)return alert("Enter a title and message.");try{const targets=audience==="All Students"?students.filter(s=>s.dbId):students.filter(s=>s.grade===audience&&s.dbId);if(!targets.length)throw new Error("No saved students match that audience yet.");for(const st of targets){const {error}=await vfaSupabase.from("admin_suggestions").insert({student_id:st.dbId,title,message:body});if(error)throw error;}await refreshRemoteContent();$("suggestionTitle").value="";$("suggestionBody").value="";renderSuggestions();}catch(err){alert("Could not send suggestion: "+err.message)}};
-window.removeSuggestion=async id=>{if(!confirm("Delete this suggestion?"))return;try{const {error}=await vfaSupabase.from("admin_suggestions").delete().eq("id",id);if(error)throw error;await refreshRemoteContent();renderSuggestions();}catch(err){alert("Could not delete suggestion: "+err.message)}};
 
-// The new database intentionally does not contain the legacy Scale Your Child tables yet.
-$("saveScaleStatements")?.addEventListener("click",()=>{if($("scaleSettingsMessage"))$("scaleSettingsMessage").textContent="Scale Your Child storage is not connected in this database build yet."});
+$("saveAllGrades").onclick=async e=>{
+  const btn=e.currentTarget;
+  document.querySelectorAll(".grade-cell").forEach(i=>{const v=i.value.trim();if(v==="")delete gradesData[i.dataset.key];else gradesData[i.dataset.key]=Math.max(0,Math.min(100,Number(v)))});
+  try{
+    await runButtonAction(btn,"Saving Grades…","✓ Grades Saved",async()=>{
+      await requireVerifiedAdminSession();
+      await syncVfaGrades();
+      await refreshRemoteContent();
+      renderGrades();
+    });
+    showVfaToast("Grade sheet saved successfully.","success");
+  }catch(err){console.error(err);showVfaToast("Could not save grades: "+(err?.message||err),"error");}
+};
+
+$("addAssignment").onclick=async e=>{
+  const btn=e.currentTarget,title=$("assignmentTitle").value.trim(),audience=$("assignmentAudience").value,subject=$("assignmentSubject").value.trim(),due=$("assignmentDue").value,body=$("assignmentBody").value.trim();
+  if(!title||!body){showVfaToast("Enter an assignment title and instructions.","error");return;}
+  try{
+    await runButtonAction(btn,"Publishing Assignment…","✓ Assignment Published",async()=>{
+      await requireVerifiedAdminSession();
+      const sr=subjectRows.find(x=>x.name.toLowerCase()===subject.toLowerCase());
+      const {error}=await vfaSupabase.from("assignments").insert({title,description:body,due_date:due||null,class_id:audienceClassId(audience),subject_id:sr?.id||null});
+      if(error)throw error;
+      await refreshRemoteContent();
+      $("assignmentTitle").value="";$("assignmentSubject").value="";$("assignmentDue").value="";$("assignmentBody").value="";
+      renderAssignments();
+    });
+    showVfaToast("Assignment published successfully.","success");
+  }catch(err){showVfaToast("Could not publish assignment: "+(err?.message||err),"error");}
+};
+window.removeAssignment=async(id,btn)=>{
+  if(!confirm("Delete this assignment?"))return;
+  try{
+    await runButtonAction(btn,"Deleting Assignment…","✓ Assignment Deleted",async()=>{
+      await requireVerifiedAdminSession();
+      const {error}=await vfaSupabase.from("assignments").delete().eq("id",id);if(error)throw error;
+      await refreshRemoteContent();
+    });
+    renderAssignments();
+    showVfaToast("Assignment deleted successfully.","success");
+  }catch(err){showVfaToast("Could not delete assignment: "+(err?.message||err),"error");}
+};
+
+
+$("addAnnouncement").onclick=async e=>{
+  const btn=e.currentTarget,title=$("announcementTitle").value.trim(),date=$("announcementDate").value,audience=$("announcementAudience").value,body=$("announcementBody").value.trim();
+  if(!title||!body){showVfaToast("Complete the announcement.","error");return;}
+  try{
+    await runButtonAction(btn,"Publishing Announcement…","✓ Announcement Published",async()=>{
+      await requireVerifiedAdminSession();
+      const createdAt=date?new Date(`${date}T12:00:00`).toISOString():new Date().toISOString();
+      const {error}=await vfaSupabase.from("announcements").insert({title,message:body,target_class_id:audienceClassId(audience),created_at:createdAt});
+      if(error)throw error;
+      await refreshRemoteContent();$("announcementTitle").value="";$("announcementBody").value="";
+      renderAnnouncements();renderHome();
+    });
+    showVfaToast("Announcement published successfully.","success");
+  }catch(err){showVfaToast("Could not publish announcement: "+(err?.message||err),"error");}
+};
+window.removeAnnouncement=async(id,btn)=>{
+  if(!confirm("Delete this announcement?"))return;
+  try{
+    await runButtonAction(btn,"Deleting Announcement…","✓ Announcement Deleted",async()=>{
+      await requireVerifiedAdminSession();
+      const {error}=await vfaSupabase.from("announcements").delete().eq("id",id);if(error)throw error;
+      await refreshRemoteContent();
+    });
+    renderAnnouncements();renderHome();
+    showVfaToast("Announcement deleted successfully.","success");
+  }catch(err){showVfaToast("Could not delete announcement: "+(err?.message||err),"error");}
+};
+
+
+$("addSuggestion").onclick=async e=>{
+  const btn=e.currentTarget,audience=$("suggestionAudience").value,title=$("suggestionTitle").value.trim(),body=$("suggestionBody").value.trim();
+  if(!title||!body){showVfaToast("Enter a title and message.","error");return;}
+  try{
+    await runButtonAction(btn,"Sending Suggestion…","✓ Suggestion Sent",async()=>{
+      await requireVerifiedAdminSession();
+      const targets=audience==="All Students"?students.filter(s=>s.dbId):students.filter(s=>s.grade===audience&&s.dbId);
+      if(!targets.length)throw new Error("No saved students match that audience yet.");
+      for(const st of targets){
+        const {error}=await vfaSupabase.from("admin_suggestions").insert({student_id:st.dbId,title,message:body});
+        if(error)throw error;
+      }
+      await refreshRemoteContent();$("suggestionTitle").value="";$("suggestionBody").value="";renderSuggestions();
+    });
+    showVfaToast("Suggestion sent successfully.","success");
+  }catch(err){showVfaToast("Could not send suggestion: "+(err?.message||err),"error");}
+};
+window.removeSuggestion=async(id,btn)=>{
+  if(!confirm("Delete this suggestion?"))return;
+  try{
+    await runButtonAction(btn,"Deleting Suggestion…","✓ Suggestion Deleted",async()=>{
+      await requireVerifiedAdminSession();
+      const {error}=await vfaSupabase.from("admin_suggestions").delete().eq("id",id);if(error)throw error;
+      await refreshRemoteContent();
+    });
+    renderSuggestions();
+    showVfaToast("Suggestion deleted successfully.","success");
+  }catch(err){showVfaToast("Could not delete suggestion: "+(err?.message||err),"error");}
+};
+
 
 function loadAdminIdCard(){const key=`vfaAdminIdCard:${currentAdmin?.id||""}`;const data=localStorage.getItem(key);const preview=$("adminIdCardPreview");if(!preview)return;preview.innerHTML=data?`<img src="${data}" alt="Administrator ID card">`:'<p class="muted">No ID card uploaded.</p>';}
 function bindAdminIdCard(){$("adminIdCardInput")?.addEventListener("change",e=>{const file=e.target.files?.[0];if(!file)return;if(!file.type.startsWith("image/")){ $("adminIdCardMessage").textContent="Please choose an image file.";return;}const reader=new FileReader();reader.onload=()=>{localStorage.setItem(`vfaAdminIdCard:${currentAdmin.id}`,reader.result);$("adminIdCardMessage").textContent="ID card uploaded.";loadAdminIdCard();};reader.readAsDataURL(file);});$("removeAdminIdCard")?.addEventListener("click",()=>{localStorage.removeItem(`vfaAdminIdCard:${currentAdmin.id}`);$("adminIdCardInput").value="";$("adminIdCardMessage").textContent="ID card removed.";loadAdminIdCard();});loadAdminIdCard();}
