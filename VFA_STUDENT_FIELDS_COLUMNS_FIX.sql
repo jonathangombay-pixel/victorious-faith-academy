@@ -7,3 +7,8 @@ alter table public.students
   add column if not exists sex text,
   add column if not exists enrollment_status text,
   add column if not exists scholarship boolean not null default false;
+
+-- Secure server-side student portal password vault.
+-- Passwords are encrypted by the Edge Function before storage; this column is not plaintext.
+alter table public.students
+  add column if not exists portal_password_encrypted text;

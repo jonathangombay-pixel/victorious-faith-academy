@@ -16,7 +16,7 @@ const corsHeaders = {
 };
 
 interface Payload {
-  action?: "create" | "sync" | "delete";
+  action?: "create" | "sync" | "delete" | "store_password" | "get_passwords";
   studentId?: string;
   password?: string;
   fullName?: string;
@@ -33,6 +33,26 @@ function json(data: unknown, status = 200) {
 
 function internalEmail(studentId: string) {
   return `${studentId.toLowerCase().replace(/[^a-z0-9._-]/g, "-")}@students.vfa.local`;
+}
+
+async function vaultKey() {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(serviceRoleKey));
+  return crypto.subtle.importKey("raw", digest, {name:"AES-GCM"}, false, ["encrypt","decrypt"]);
+}
+async function encryptPassword(password: string) {
+  const key = await vaultKey();
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encrypted = await crypto.subtle.encrypt({name:"AES-GCM",iv}, key, new TextEncoder().encode(password));
+  const bytes = new Uint8Array(encrypted);
+  const combined = new Uint8Array(iv.length + bytes.length); combined.set(iv); combined.set(bytes, iv.length);
+  return btoa(String.fromCharCode(...combined));
+}
+async function decryptPassword(value: string) {
+  const raw = Uint8Array.from(atob(value), c => c.charCodeAt(0));
+  const iv = raw.slice(0,12), ciphertext = raw.slice(12);
+  const key = await vaultKey();
+  const plain = await crypto.subtle.decrypt({name:"AES-GCM",iv}, key, ciphertext);
+  return new TextDecoder().decode(plain);
 }
 
 Deno.serve(async (req) => {
@@ -61,6 +81,25 @@ Deno.serve(async (req) => {
     if (!admin) return json({ error: "You are not authorized to manage student accounts." }, 403);
 
     const body: Payload = await req.json();
+
+    if (body.action === "get_passwords") {
+      const { data: rows, error } = await adminClient.from("students").select("student_code,portal_password_encrypted").not("portal_password_encrypted", "is", null);
+      if (error) return json({ error: error.message }, 500);
+      const passwords: Record<string,string> = {};
+      for (const row of rows || []) {
+        if (!row.student_code || !row.portal_password_encrypted) continue;
+        try { passwords[row.student_code] = await decryptPassword(row.portal_password_encrypted); } catch { }
+      }
+      return json({ success: true, passwords });
+    }
+
+    if (body.action === "store_password") {
+      if (!body.studentId || !body.password) return json({ error: "Student ID and password are required." }, 400);
+      const encrypted = await encryptPassword(body.password);
+      const { error } = await adminClient.from("students").update({ portal_password_encrypted: encrypted }).eq("student_code", body.studentId);
+      if (error) return json({ error: error.message }, 500);
+      return json({ success: true });
+    }
 
     if (body.action === "delete") {
       if (!body.studentDbId && !body.authUserId) return json({ error: "Student account identifier is required." }, 400);

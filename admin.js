@@ -60,6 +60,20 @@ function rememberStudentPassword(id,password){
  if(!id||!password)return;
  const map=getStoredStudentPasswords(); map[id]=password; saveStoredStudentPasswords(map);
 }
+async function loadServerStudentPasswords(){
+ try{
+  const {data,error}=await vfaSupabase.functions.invoke("bright-api",{body:{action:"get_passwords"}});
+  if(error||data?.error)throw new Error(error?.message||data?.error||"Password vault could not be loaded.");
+  const serverPasswords=data?.passwords||{};
+  Object.entries(serverPasswords).forEach(([id,password])=>{const student=students.find(x=>x.id===id);if(student&&password)student.password=password;});
+  return serverPasswords;
+ }catch(err){console.warn("Could not load server-side student passwords:",err);return {};}
+}
+async function saveServerStudentPassword(studentId,password){
+ if(!studentId||!password)return;
+ const {data,error}=await vfaSupabase.functions.invoke("bright-api",{body:{action:"store_password",studentId,password}});
+ if(error||data?.error)throw new Error(error?.message||data?.error||"Student password could not be stored securely.");
+}
 function formatRegistrationNumber(n){return n==null||n===""?"":String(n).padStart(3,"0");}
 function makeStudentCode(n){return `${BASE_ID}${formatRegistrationNumber(n)}`;}
 function registrationFromCode(id){const m=String(id||"").match(/(\d{3})$/);return m?Number(m[1]):null;}
@@ -176,6 +190,7 @@ async function generateExistingStudentPasswords(){
       if(data?.error)throw new Error(data.error);
       s.password=password;
       rememberStudentPassword(s.id,password);
+      await saveServerStudentPassword(s.id,password);
       if(data?.studentAuthUserId)s.auth_user_id=data.studentAuthUserId;
       s.auth_sync_error=false;
       completed++;
@@ -584,6 +599,8 @@ async function loadVfaRemote(){
   if(ste)throw new Error(`students: ${ste.message}`);
   const classById=Object.fromEntries(classRows.map(x=>[x.id,x.name]));
   students=(studentsDb||[]).map(x=>({dbId:x.id,id:x.student_code||"",name:x.full_name,grade:classById[x.class_id]||"",registrationDate:x.registration_date||"",sex:x.sex||"",enrollmentStatus:x.enrollment_status||"",parent:x.parent_name||"",parentPhone:x.parent_phone||"",sponsor:(staff.find(t=>t.id===x.sponsor_id)||{}).name||"",sponsorId:x.sponsor_id||"",status:x.is_active?"Active":"Inactive",schoolYear:x.school_year||"",password:getStudentPassword(x.student_code||""),auth_user_id:x.auth_user_id,scholarship:Boolean(x.scholarship)}));
+  await loadServerStudentPasswords();
+  students.forEach(s=>{if(!s.password){const saved=getStudentPassword(s.id);if(saved)s.password=saved;}});
   const {data:subs,error:sube}=await vfaSupabase.from("subjects").select("id,name").order("name");
   if(sube)throw new Error(`subjects: ${sube.message}`); subjectRows=subs||[];
   await refreshRemoteContent();
@@ -625,6 +642,7 @@ async function syncVfaStudents(){
     if(authError) throw new Error(authError.message || "Student portal account could not be created.");
     if(authData?.error) throw new Error(authData.error);
     if(authData?.studentAuthUserId) s.auth_user_id = authData.studentAuthUserId;
+    if(s.password) await saveServerStudentPassword(s.id,s.password);
     s.auth_sync_error = false;
   }
 }
