@@ -52,4 +52,19 @@ const avgs=(grades||[]).map(g=>Number(g.score)).filter(Number.isFinite);const av
 const titles={home:"Home",grades:"Student's Grade",finance:"Financial Report",scale:"Scale Your Child",suggestions:"Admin Suggestions",assignments:"Assignments",announcements:"Announcements",exams:"Examination Timetable",profile:"Profile"};
 function openTab(id){document.querySelectorAll(".tab-page").forEach(p=>p.classList.remove("active"));$(id)?.classList.add("active");document.querySelectorAll(".nav-button").forEach(b=>b.classList.toggle("active",b.dataset.tab===id));if($("pageTitle"))$("pageTitle").textContent=titles[id]||id;window.scrollTo({top:0,behavior:"smooth"});}
 $("logout")?.addEventListener("click",async()=>{await vfaSupabase.auth.signOut();localStorage.removeItem("loggedInStudent");location.href="./"});
-(async()=>{try{await load()}catch(err){console.error(err);alert("The student portal could not load: "+(err.message||err));}})();
+let vfaStudentRealtimeChannel=null;
+let vfaStudentRealtimeTimer=null;
+async function refreshStudentRealtimeView(){
+  clearTimeout(vfaStudentRealtimeTimer);
+  vfaStudentRealtimeTimer=setTimeout(async()=>{
+    try{await load();}catch(err){console.warn("VFA student realtime refresh failed:",err);}
+  },250);
+}
+function setupStudentRealtime(){
+  if(vfaStudentRealtimeChannel)vfaSupabase.removeChannel(vfaStudentRealtimeChannel);
+  const tables=["students","financial_records","fee_structures","grades","exam_timetable","assignments","announcements","admin_suggestions","scale_settings","classes","subjects"];
+  vfaStudentRealtimeChannel=vfaSupabase.channel("vfa-student-live-data");
+  tables.forEach(table=>{vfaStudentRealtimeChannel.on("postgres_changes",{event:"*",schema:"public",table},()=>refreshStudentRealtimeView());});
+  vfaStudentRealtimeChannel.subscribe(status=>{if(status!=="SUBSCRIBED")console.debug("VFA student realtime status:",status);});
+}
+(async()=>{try{await load();setupStudentRealtime();}catch(err){console.error(err);alert("The student portal could not load: "+(err.message||err));}})();

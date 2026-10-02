@@ -528,7 +528,23 @@ async function getVerifiedAdminSession(){
  currentAdmin={id:profile.admin_code,email:profile.email||user.email,name:profile.full_name,role:profile.role,position:profile.position};
  return {session,user,profile};
 }
-async function showVerifiedAdminPanel(){const verified=await getVerifiedAdminSession();if(!verified)return false;await loadVfaRemote();$("loginView").classList.add("hidden");$("adminApp").classList.remove("hidden");$("staffPill").textContent=`${currentAdmin.name} • ${currentAdmin.role}`;init();return true;}
+let vfaAdminRealtimeChannel=null;
+let vfaAdminRealtimeTimer=null;
+async function refreshAdminRealtimeView(){
+  if(!currentAdmin || !$("adminApp") || $("adminApp").classList.contains("hidden")) return;
+  clearTimeout(vfaAdminRealtimeTimer);
+  vfaAdminRealtimeTimer=setTimeout(async()=>{
+    try{await loadVfaRemote();renderAll();}catch(err){console.warn("VFA realtime refresh failed:",err);}
+  },250);
+}
+function setupAdminRealtime(){
+  if(vfaAdminRealtimeChannel)vfaSupabase.removeChannel(vfaAdminRealtimeChannel);
+  const tables=["students","staff","staff_attendance","financial_records","fee_structures","grades","exam_timetable","assignments","announcements","admin_suggestions","scale_your_child","scale_settings","classes","subjects"];
+  vfaAdminRealtimeChannel=vfaSupabase.channel("vfa-admin-live-data");
+  tables.forEach(table=>{vfaAdminRealtimeChannel.on("postgres_changes",{event:"*",schema:"public",table},()=>refreshAdminRealtimeView());});
+  vfaAdminRealtimeChannel.subscribe(status=>{if(status!=="SUBSCRIBED")console.debug("VFA realtime status:",status);});
+}
+async function showVerifiedAdminPanel(){const verified=await getVerifiedAdminSession();if(!verified)return false;await loadVfaRemote();$("loginView").classList.add("hidden");$("adminApp").classList.remove("hidden");$("staffPill").textContent=`${currentAdmin.name} • ${currentAdmin.role}`;init();setupAdminRealtime();return true;}
 
 async function refreshRemoteContent(){
   const classMap=Object.fromEntries(classRows.map(x=>[x.id,x.name]));
