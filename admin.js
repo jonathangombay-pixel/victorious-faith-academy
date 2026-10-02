@@ -533,6 +533,8 @@ let vfaAdminRealtimeTimer=null;
 let vfaAdminRealtimeRetryTimer=null;
 let vfaAdminRealtimeRefreshTimer=null;
 let vfaAdminRealtimeLastEvent=0;
+let vfaAdminFallbackPollTimer=null;
+let vfaAdminFallbackPollBusy=false;
 async function refreshAdminRealtimeView(){
   if(!currentAdmin || !$("adminApp") || $("adminApp").classList.contains("hidden")) return;
   clearTimeout(vfaAdminRealtimeTimer);
@@ -574,6 +576,18 @@ vfaAdminRealtimeRefreshTimer=setInterval(()=>{
   const channelState=vfaAdminRealtimeChannel?.state;
   if(channelState!=="joined") setupAdminRealtime();
 },5000);
+// Guaranteed cross-device fallback: if Realtime is delayed or unavailable,
+// periodically re-read the server while this authorized admin page is visible.
+// This does not change authentication/session behavior or write any data.
+clearInterval(vfaAdminFallbackPollTimer);
+vfaAdminFallbackPollTimer=setInterval(async()=>{
+  if(document.visibilityState!=="visible" || !currentAdmin || !$("adminApp") || $("adminApp").classList.contains("hidden") || vfaAdminFallbackPollBusy) return;
+  if(Date.now()-vfaAdminRealtimeLastEvent<1800) return;
+  vfaAdminFallbackPollBusy=true;
+  try{await loadVfaRemote({refreshAuth:false});renderAll();}
+  catch(err){console.warn("VFA live-sync fallback refresh failed:",err);}
+  finally{vfaAdminFallbackPollBusy=false;}
+},2000);
 async function showVerifiedAdminPanel(){const verified=await getVerifiedAdminSession();if(!verified)return false;await loadVfaRemote();$("loginView").classList.add("hidden");$("adminApp").classList.remove("hidden");$("staffPill").textContent=`${currentAdmin.name} • ${currentAdmin.role}`;init();setupAdminRealtime();return true;}
 
 async function refreshRemoteContent(){
@@ -626,8 +640,8 @@ async function refreshVfaAuthSession(){
   return data?.session||null;
 }
 
-async function loadVfaRemote(){
-  await refreshVfaAuthSession();
+async function loadVfaRemote(options={}){
+  if(options.refreshAuth!==false) await refreshVfaAuthSession();
   const {data:{user},error:ue}=await vfaSupabase.auth.getUser();
   if(ue)throw ue; if(!user)throw new Error("No authenticated admin user.");
   const {data:admins,error:ae}=await vfaSupabase.from("admin_profiles").select("id,admin_code,full_name,email,role,position,is_active").eq("auth_user_id",user.id).maybeSingle();
