@@ -32,6 +32,24 @@ let staff=[];
 let staffAttendance=[];
 let reportMeta=get("vfaReportMeta",{});
 let currentAdmin=null;
+const VFA_ADMIN_SESSION_KEY_STORAGE="vfaAdminSessionLockKeyV1";
+function getVfaAdminSessionKey(){
+  const keyName=`${VFA_ADMIN_SESSION_KEY_STORAGE}:${location.origin}`;
+  let key=localStorage.getItem(keyName);
+  if(!key){
+    key=(globalThis.crypto?.randomUUID?crypto.randomUUID():`${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`);
+    localStorage.setItem(keyName,key);
+  }
+  return key;
+}
+async function acquireVfaAdminSessionLock(){
+  const {data,error}=await vfaSupabase.rpc("vfa_acquire_admin_session",{p_session_key:getVfaAdminSessionKey()});
+  if(error)throw new Error(error.message||"This VFA administrator account is already signed in on another device. Please log out there before signing in here.");
+  if(data?.ok!==true)throw new Error("This VFA administrator account is already signed in on another device. Please log out there before signing in here.");
+}
+async function releaseVfaAdminSessionLock(){
+  try{await vfaSupabase.rpc("vfa_release_admin_session",{p_session_key:getVfaAdminSessionKey()});}catch(err){console.warn("VFA admin session lock release failed:",err);}
+}
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]));
 const today=()=>new Date().toISOString().slice(0,10);
@@ -478,10 +496,8 @@ window.viewScaleResponse=id=>{
    <div class="scale-review-status"><strong>Status:</strong> ${data.reviewed?"Reviewed":"Not reviewed"}</div>
   </div>`);
 };
-window.markScaleReviewed=async id=>{const r=scaleResponses.find(x=>x.id===id);if(!r)return;const data=normalizeScaleResponse(r.response);const response={...(r.response&&typeof r.response==="object"?r.response:{}),checks:data.checks,note:data.note,reviewed:!data.reviewed};try{const {error}=await vfaSupabase.from("scale_your_child").update({response}).eq("id",id);if(error)throw error;r.reviewed=response.reviewed;r.response=response;renderScale();renderHome();}catch(err){alert("Could not update response: "+err.message)}};
-window.deleteScaleResponse=async id=>{const r=scaleResponses.find(x=>x.id===id);if(!r)return;const student=r.studentName||"this student";if(!confirm(`Delete this Scale Your Child response from ${student}?
-
-This will permanently remove the parent response from the school database.`))return;try{const {error}=await vfaSupabase.from("scale_your_child").delete().eq("id",id);if(error)throw error;scaleResponses=scaleResponses.filter(x=>x.id!==id);renderScale();renderHome();alert("The parent response was deleted.");}catch(err){console.error(err);alert("Could not delete response: "+err.message)}};
+window.markScaleReviewed=async id=>{const r=scaleResponses.find(x=>x.id===id);if(!r)return;const data=normalizeScaleResponse(r.response);r.reviewed=!data.reviewed;r.response={...(r.response&&typeof r.response==="object"?r.response:{}),checks:data.checks,note:data.note,reviewed:r.reviewed};renderScale();renderHome();};
+window.deleteScaleResponse=async id=>{const r=scaleResponses.find(x=>x.id===id);if(!r)return;if(!confirm("Delete this Scale Your Child response?"))return;scaleResponses=scaleResponses.filter(x=>x.id!==id);renderScale();renderHome();};
 function renderSuggestions(){$("suggestionList").innerHTML=suggestions.map(s=>`<div class="announcement-item"><div><strong>${esc(s.title)}</strong><span>To: ${esc(s.audience)} • ${esc(s.date)} • By ${esc(s.by)}</span><p>${esc(s.body)}</p></div><button class="icon-btn danger" onclick="removeSuggestion('${esc(s.id)}')">🗑️</button></div>`).join("")||'<p class="empty">No suggestions sent.</p>'}
 $("addSuggestion").onclick=async()=>{const audience=$("suggestionAudience").value,title=$("suggestionTitle").value.trim(),body=$("suggestionBody").value.trim();if(!title||!body)return alert("Enter a title and message.");try{const {data,error}=await vfaSupabase.from("admin_suggestions").insert(targets.map(st=>({student_id:st.dbId,title,message:body})));if(error)throw error;await refreshRemoteContent();$("suggestionTitle").value="";$("suggestionBody").value="";renderSuggestions();}catch(err){alert("Could not send suggestion: "+err.message)}};
 window.removeSuggestion=async id=>{if(!confirm("Delete this suggestion?"))return;try{const {error}=await vfaSupabase.from("admin_suggestions").delete().eq("id",id);if(error)throw error;await refreshRemoteContent();renderSuggestions();}catch(err){alert("Could not delete suggestion: "+err.message)}};
@@ -561,7 +577,7 @@ function setupAdminRealtime(){
   // blocked or Supabase Realtime temporarily drops a notification.
   vfaAdminRealtimePoll=setInterval(()=>refreshAdminRealtimeView(),5000);
 }
-async function showVerifiedAdminPanel(){const verified=await getVerifiedAdminSession();if(!verified)return false;await loadVfaRemote();$("loginView").classList.add("hidden");$("adminApp").classList.remove("hidden");$("staffPill").textContent=`${currentAdmin.name} • ${currentAdmin.role}`;init();setupAdminRealtime();return true;}
+async function showVerifiedAdminPanel(){const verified=await getVerifiedAdminSession();if(!verified)return false;await acquireVfaAdminSessionLock();await loadVfaRemote();$("loginView").classList.add("hidden");$("adminApp").classList.remove("hidden");$("staffPill").textContent=`${currentAdmin.name} • ${currentAdmin.role}`;init();setupAdminRealtime();return true;}
 
 async function refreshRemoteContent(){
   const classMap=Object.fromEntries(classRows.map(x=>[x.id,x.name]));
@@ -715,8 +731,8 @@ function loadAdminIdCard(){const key=`vfaAdminIdCard:${currentAdmin?.id||""}`;co
 function bindAdminIdCard(){$("adminIdCardInput")?.addEventListener("change",e=>{const file=e.target.files?.[0];if(!file)return;if(!file.type.startsWith("image/")){ $("adminIdCardMessage").textContent="Please choose an image file.";return;}const reader=new FileReader();reader.onload=()=>{localStorage.setItem(`vfaAdminIdCard:${currentAdmin.id}`,reader.result);$("adminIdCardMessage").textContent="ID card uploaded.";loadAdminIdCard();};reader.readAsDataURL(file);});$("removeAdminIdCard")?.addEventListener("click",()=>{localStorage.removeItem(`vfaAdminIdCard:${currentAdmin.id}`);$("adminIdCardInput").value="";$("adminIdCardMessage").textContent="ID card removed.";loadAdminIdCard();});loadAdminIdCard();}
 
 // Rebind handlers that were attached before this compatibility layer was loaded.
-$("staffLoginForm").onsubmit=async e=>{e.preventDefault();const id=$("staffId").value.trim(),pw=$("staffPassword").value;const account=ADMIN_ACCOUNTS.find(a=>a.id===id);if(!account){$("loginMessage").textContent="Incorrect Admin ID.";return;}$("loginMessage").textContent="Signing in…";try{const {data,error}=await vfaSupabase.auth.signInWithPassword({email:account.email,password:pw});if(error)throw error;await showVerifiedAdminPanel();$("loginMessage").textContent="";setTimeout(bindAdminIdCard,0);}catch(err){await vfaSupabase.auth.signOut();currentAdmin=null;$("loginMessage").textContent="Admin login failed: "+(err.message||err);}};
-$("staffLogout").onclick=async()=>{await vfaSupabase.auth.signOut();currentAdmin=null;$("adminApp").classList.add("hidden");$("loginView").classList.remove("hidden");};
+$("staffLoginForm").onsubmit=async e=>{e.preventDefault();const id=$("staffId").value.trim(),pw=$("staffPassword").value;const account=ADMIN_ACCOUNTS.find(a=>a.id===id);if(!account){$("loginMessage").textContent="Incorrect Admin ID.";return;}$("loginMessage").textContent="Signing in…";try{const {data,error}=await vfaSupabase.auth.signInWithPassword({email:account.email,password:pw});if(error)throw error;if(!data?.session?.user)throw new Error("Supabase login succeeded but no browser session was created.");await showVerifiedAdminPanel();$("loginMessage").textContent="";setTimeout(bindAdminIdCard,0);}catch(err){try{await vfaSupabase.auth.signOut();}catch(_){}currentAdmin=null;$("adminApp").classList.add("hidden");$("loginView").classList.remove("hidden");$("loginMessage").textContent=(err.message||String(err));}};
+$("staffLogout").onclick=async()=>{await releaseVfaAdminSessionLock();await vfaSupabase.auth.signOut();currentAdmin=null;$("adminApp").classList.add("hidden");$("loginView").classList.remove("hidden");$("staffId").value="";$("staffPassword").value="";};
 document.addEventListener("visibilitychange",async()=>{
   if(document.visibilityState!=="visible")return;
   try{

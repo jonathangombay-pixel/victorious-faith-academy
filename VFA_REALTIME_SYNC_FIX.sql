@@ -1,3 +1,8 @@
+-- VFA REALTIME SYNC FIX
+-- Run once in Supabase SQL Editor as the project owner.
+-- Safe: this only adds existing portal tables to Supabase Realtime.
+-- It does not delete, update, migrate, or reset application data.
+
 DO $$
 DECLARE
   tbl text;
@@ -6,6 +11,7 @@ DECLARE
     'staff',
     'staff_attendance',
     'financial_records',
+    'fee_structures',
     'grades',
     'student_period_results',
     'exam_timetable',
@@ -14,27 +20,32 @@ DECLARE
     'admin_suggestions',
     'admin_profiles',
     'scale_settings',
-    'classes'
+    'scale_your_child',
+    'classes',
+    'subjects'
   ];
 BEGIN
-  FOREACH tbl IN ARRAY tables_to_sync
-  LOOP
+  FOREACH tbl IN ARRAY tables_to_sync LOOP
     IF EXISTS (
       SELECT 1
       FROM information_schema.tables
       WHERE table_schema = 'public'
         AND table_name = tbl
+    ) AND NOT EXISTS (
+      SELECT 1
+      FROM pg_publication_tables
+      WHERE pubname = 'supabase_realtime'
+        AND schemaname = 'public'
+        AND tablename = tbl
     ) THEN
-      BEGIN
-        EXECUTE format(
-          'ALTER PUBLICATION supabase_realtime ADD TABLE public.%I',
-          tbl
-        );
-      EXCEPTION
-        WHEN duplicate_object THEN
-          NULL;
-      END;
+      EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE public.%I', tbl);
     END IF;
   END LOOP;
-END
-$$;
+END $$;
+
+-- Verify the portal tables that actually exist and are now published.
+SELECT schemaname, tablename
+FROM pg_publication_tables
+WHERE pubname = 'supabase_realtime'
+  AND schemaname = 'public'
+ORDER BY tablename;
