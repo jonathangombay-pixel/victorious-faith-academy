@@ -132,3 +132,18 @@
 
 /* Finance payment structure */
 .finance-controls{grid-template-columns:1.2fr 1.8fr 180px;margin-bottom:18px}.fee-setup{background:linear-gradient(135deg,#fff8e3,#fff);border:1px solid #ead8aa;border-radius:16px;padding:18px;margin-bottom:20px}.fee-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:14px;align-items:end}.fee-grid label{margin:0}.fee-grid input{width:100%;padding:11px;border:1px solid #ddd3c4;border-radius:9px;margin-top:5px}.fee-total{background:#fff;border:1px solid #ead8aa;border-radius:10px;padding:11px}.fee-total span{display:block;font-size:12px;color:var(--muted)}.fee-total strong{display:block;margin-top:4px;color:var(--brown);font-size:18px}.installment-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:15px 0}.installment-card{background:#fff8e7;border:1px solid #ead8aa;border-radius:12px;padding:14px}.installment-card span,.installment-card small{display:block;color:var(--muted);font-size:12px}.installment-card strong{display:block;color:var(--brown);font-size:18px;margin:5px 0}.installment-card b{display:block;margin-top:5px}.message{color:var(--green);font-weight:700}@media(max-width:900px){.finance-controls,.fee-grid{grid-template-columns:1fr 1fr}.installment-grid{grid-template-columns:1fr}}@media(max-width:520px){.finance-controls,.fee-grid{grid-template-columns:1fr}}
+
+/* VFA UI: independent native-style scrolling for sidebar tabs and main content. */
+@media (min-width: 521px){
+  html, body{height:100%;overflow:hidden}
+  .admin-app{height:100vh;min-height:100vh;overflow:hidden}
+  .admin-app>.sidebar{height:100vh;min-height:0;overflow:hidden;position:sticky;top:0}
+  .admin-app>.sidebar nav{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:auto;scrollbar-color:#8b8179 transparent}
+  .admin-app>.sidebar nav::-webkit-scrollbar{width:10px}
+  .admin-app>.sidebar nav::-webkit-scrollbar-track{background:transparent}
+  .admin-app>.sidebar nav::-webkit-scrollbar-thumb{background:#8b8179;border-radius:8px;border:2px solid var(--brown-dark)}
+  .admin-app>.main{height:100vh;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:auto;scrollbar-color:#8b8179 transparent}
+  .admin-app>.main::-webkit-scrollbar{width:10px}
+  .admin-app>.main::-webkit-scrollbar-track{background:transparent}
+  .admin-app>.main::-webkit-scrollbar-thumb{background:#8b8179;border-radius:8px;border:2px solid var(--cream)}
+}

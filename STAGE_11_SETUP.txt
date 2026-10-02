@@ -1,0 +1,7 @@
+VFA Stage 11 — Student Login
+
+This build preserves the working Stage 10 admin login and Students tab.
+
+One-time server setup required: deploy supabase/functions/bright-api/index.ts to the CURRENT Supabase project as an Edge Function named bright-api. Supabase supplies SUPABASE_URL, SUPABASE_ANON_KEY, and SUPABASE_SERVICE_ROLE_KEY automatically to Edge Functions; do not put a service-role key in the browser or in the portal files.
+
+After deployment, Admin > Students > Save Students creates/syncs the student Auth account automatically and links it to students.auth_user_id. Student Login converts the Student Code to the same internal email format.

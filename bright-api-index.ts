@@ -32,7 +32,7 @@ function json(data: unknown, status = 200) {
 }
 
 function internalEmail(studentId: string) {
-  return `${studentId.toLowerCase().replace(/[^a-z0-9]/g, "")}@students.vfa.local`;
+  return `${studentId.toLowerCase().replace(/[^a-z0-9._-]/g, "-")}@students.vfa.local`;
 }
 
 Deno.serve(async (req) => {
