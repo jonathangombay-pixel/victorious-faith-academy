@@ -54,17 +54,32 @@ function openTab(id){document.querySelectorAll(".tab-page").forEach(p=>p.classLi
 $("logout")?.addEventListener("click",async()=>{await vfaSupabase.auth.signOut();localStorage.removeItem("loggedInStudent");location.href="./"});
 let vfaStudentRealtimeChannel=null;
 let vfaStudentRealtimeTimer=null;
+let vfaStudentRealtimeRetryTimer=null;
+let vfaStudentRealtimeKeepaliveTimer=null;
 async function refreshStudentRealtimeView(){
   clearTimeout(vfaStudentRealtimeTimer);
   vfaStudentRealtimeTimer=setTimeout(async()=>{
     try{await load();}catch(err){console.warn("VFA student realtime refresh failed:",err);}
-  },250);
+  },150);
+}
+function scheduleStudentRealtimeRetry(){
+  clearTimeout(vfaStudentRealtimeRetryTimer);
+  vfaStudentRealtimeRetryTimer=setTimeout(()=>setupStudentRealtime(),2000);
 }
 function setupStudentRealtime(){
-  if(vfaStudentRealtimeChannel)vfaSupabase.removeChannel(vfaStudentRealtimeChannel);
+  clearTimeout(vfaStudentRealtimeRetryTimer);
+  if(vfaStudentRealtimeChannel){try{vfaSupabase.removeChannel(vfaStudentRealtimeChannel);}catch(_){}}
   const tables=["students","financial_records","fee_structures","grades","exam_timetable","assignments","announcements","admin_suggestions","scale_settings","classes","subjects"];
-  vfaStudentRealtimeChannel=vfaSupabase.channel("vfa-student-live-data");
+  vfaStudentRealtimeChannel=vfaSupabase.channel("vfa-student-live-data-"+Date.now());
   tables.forEach(table=>{vfaStudentRealtimeChannel.on("postgres_changes",{event:"*",schema:"public",table},()=>refreshStudentRealtimeView());});
-  vfaStudentRealtimeChannel.subscribe(status=>{if(status!=="SUBSCRIBED")console.debug("VFA student realtime status:",status);});
+  vfaStudentRealtimeChannel.subscribe(status=>{
+    if(status==="SUBSCRIBED") console.info("VFA live sync connected");
+    else {console.warn("VFA live sync status:",status);scheduleStudentRealtimeRetry();}
+  });
 }
+clearInterval(vfaStudentRealtimeKeepaliveTimer);
+vfaStudentRealtimeKeepaliveTimer=setInterval(()=>{
+  if(document.visibilityState!=="visible") return;
+  if(vfaStudentRealtimeChannel?.state!=="joined") setupStudentRealtime();
+},5000);
 (async()=>{try{await load();setupStudentRealtime();}catch(err){console.error(err);alert("The student portal could not load: "+(err.message||err));}})();

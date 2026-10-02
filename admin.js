@@ -530,20 +530,50 @@ async function getVerifiedAdminSession(){
 }
 let vfaAdminRealtimeChannel=null;
 let vfaAdminRealtimeTimer=null;
+let vfaAdminRealtimeRetryTimer=null;
+let vfaAdminRealtimeRefreshTimer=null;
+let vfaAdminRealtimeLastEvent=0;
 async function refreshAdminRealtimeView(){
   if(!currentAdmin || !$("adminApp") || $("adminApp").classList.contains("hidden")) return;
   clearTimeout(vfaAdminRealtimeTimer);
   vfaAdminRealtimeTimer=setTimeout(async()=>{
-    try{await loadVfaRemote();renderAll();}catch(err){console.warn("VFA realtime refresh failed:",err);}
-  },250);
+    try{await loadVfaRemote();renderAll();}
+    catch(err){console.warn("VFA realtime refresh failed:",err);}
+  },150);
+}
+function scheduleAdminRealtimeRetry(){
+  clearTimeout(vfaAdminRealtimeRetryTimer);
+  vfaAdminRealtimeRetryTimer=setTimeout(()=>setupAdminRealtime(),2000);
 }
 function setupAdminRealtime(){
-  if(vfaAdminRealtimeChannel)vfaSupabase.removeChannel(vfaAdminRealtimeChannel);
-  const tables=["students","staff","staff_attendance","financial_records","fee_structures","grades","exam_timetable","assignments","announcements","admin_suggestions","scale_your_child","scale_settings","classes","subjects"];
-  vfaAdminRealtimeChannel=vfaSupabase.channel("vfa-admin-live-data");
-  tables.forEach(table=>{vfaAdminRealtimeChannel.on("postgres_changes",{event:"*",schema:"public",table},()=>refreshAdminRealtimeView());});
-  vfaAdminRealtimeChannel.subscribe(status=>{if(status!=="SUBSCRIBED")console.debug("VFA realtime status:",status);});
+  clearTimeout(vfaAdminRealtimeRetryTimer);
+  if(vfaAdminRealtimeChannel){try{vfaSupabase.removeChannel(vfaAdminRealtimeChannel);}catch(_){}}
+  const tables=["students","staff","staff_attendance","financial_records","fee_structures","grades","exam_timetable","assignments","announcements","admin_suggestions","scale_settings","classes","subjects"];
+  vfaAdminRealtimeChannel=vfaSupabase.channel("vfa-admin-live-data-"+Date.now());
+  tables.forEach(table=>{
+    vfaAdminRealtimeChannel.on("postgres_changes",{event:"*",schema:"public",table},()=>{
+      vfaAdminRealtimeLastEvent=Date.now();
+      refreshAdminRealtimeView();
+    });
+  });
+  vfaAdminRealtimeChannel.subscribe(status=>{
+    if(status==="SUBSCRIBED"){
+      vfaAdminRealtimeLastEvent=Date.now();
+      console.info("VFA live sync connected");
+    }else{
+      console.warn("VFA live sync status:",status);
+      scheduleAdminRealtimeRetry();
+    }
+  });
 }
+// If a browser/network temporarily loses Realtime, keep retrying instead of
+// leaving the second device permanently stale. This does not write to Supabase.
+clearInterval(vfaAdminRealtimeRefreshTimer);
+vfaAdminRealtimeRefreshTimer=setInterval(()=>{
+  if(document.visibilityState!=="visible" || !currentAdmin || !$("adminApp") || $("adminApp").classList.contains("hidden")) return;
+  const channelState=vfaAdminRealtimeChannel?.state;
+  if(channelState!=="joined") setupAdminRealtime();
+},5000);
 async function showVerifiedAdminPanel(){const verified=await getVerifiedAdminSession();if(!verified)return false;await loadVfaRemote();$("loginView").classList.add("hidden");$("adminApp").classList.remove("hidden");$("staffPill").textContent=`${currentAdmin.name} • ${currentAdmin.role}`;init();setupAdminRealtime();return true;}
 
 async function refreshRemoteContent(){
@@ -691,8 +721,7 @@ window.removeAnnouncement=async id=>{if(!confirm("Delete this announcement?"))re
 $("addSuggestion").onclick=async()=>{const audience=$("suggestionAudience").value,title=$("suggestionTitle").value.trim(),body=$("suggestionBody").value.trim();if(!title||!body)return alert("Enter a title and message.");try{const targets=audience==="All Students"?students.filter(s=>s.dbId):students.filter(s=>s.grade===audience&&s.dbId);if(!targets.length)throw new Error("No saved students match that audience yet.");for(const st of targets){const {error}=await vfaSupabase.from("admin_suggestions").insert({student_id:st.dbId,title,message:body});if(error)throw error;}await refreshRemoteContent();$("suggestionTitle").value="";$("suggestionBody").value="";renderSuggestions();}catch(err){alert("Could not send suggestion: "+err.message)}};
 window.removeSuggestion=async id=>{if(!confirm("Delete this suggestion?"))return;try{const {error}=await vfaSupabase.from("admin_suggestions").delete().eq("id",id);if(error)throw error;await refreshRemoteContent();renderSuggestions();}catch(err){alert("Could not delete suggestion: "+err.message)}};
 
-// The new database intentionally does not contain the legacy Scale Your Child tables yet.
-$("saveScaleStatements")?.addEventListener("click",()=>{if($("scaleSettingsMessage"))$("scaleSettingsMessage").textContent="Scale Your Child storage is not connected in this database build yet."});
+// Scale Your Child statements are stored in the existing scale_settings table.
 
 function loadAdminIdCard(){const key=`vfaAdminIdCard:${currentAdmin?.id||""}`;const data=localStorage.getItem(key);const preview=$("adminIdCardPreview");if(!preview)return;preview.innerHTML=data?`<img src="${data}" alt="Administrator ID card">`:'<p class="muted">No ID card uploaded.</p>';}
 function bindAdminIdCard(){$("adminIdCardInput")?.addEventListener("change",e=>{const file=e.target.files?.[0];if(!file)return;if(!file.type.startsWith("image/")){ $("adminIdCardMessage").textContent="Please choose an image file.";return;}const reader=new FileReader();reader.onload=()=>{localStorage.setItem(`vfaAdminIdCard:${currentAdmin.id}`,reader.result);$("adminIdCardMessage").textContent="ID card uploaded.";loadAdminIdCard();};reader.readAsDataURL(file);});$("removeAdminIdCard")?.addEventListener("click",()=>{localStorage.removeItem(`vfaAdminIdCard:${currentAdmin.id}`);$("adminIdCardInput").value="";$("adminIdCardMessage").textContent="ID card removed.";loadAdminIdCard();});loadAdminIdCard();}
