@@ -158,3 +158,19 @@ button:disabled { cursor: wait; opacity: .78; }
 @keyframes vfaSpin { to { transform:rotate(360deg); } }
 @keyframes vfaPop { from { transform:scale(.65); opacity:0; } to { transform:scale(1); opacity:1; } }
 @media (prefers-reduced-motion: reduce) { button { transition:none; } .vfa-button-spinner { animation:none; } .vfa-button-check,.vfa-button-error { animation:none; } }
+
+
+/* VFA UI: mobile independent navigation and main-content scrolling. */
+@media (max-width: 520px){
+  html, body{height:100%;overflow:hidden}
+  .admin-app{height:100vh;min-height:100vh;overflow:hidden}
+  .admin-app>.sidebar{height:100vh;min-height:0;overflow:hidden}
+  .admin-app>.sidebar nav{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:auto;scrollbar-color:#8b8179 transparent}
+  .admin-app>.sidebar nav::-webkit-scrollbar{width:10px}
+  .admin-app>.sidebar nav::-webkit-scrollbar-track{background:transparent}
+  .admin-app>.sidebar nav::-webkit-scrollbar-thumb{background:#8b8179;border-radius:8px;border:2px solid var(--brown-dark)}
+  .admin-app>.main{height:100vh;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:auto;scrollbar-color:#8b8179 transparent}
+  .admin-app>.main::-webkit-scrollbar{width:10px}
+  .admin-app>.main::-webkit-scrollbar-track{background:transparent}
+  .admin-app>.main::-webkit-scrollbar-thumb{background:#8b8179;border-radius:8px;border:2px solid var(--cream)}
+}

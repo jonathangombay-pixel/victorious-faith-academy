@@ -23,4 +23,17 @@
 <section id="announcements" class="tab-page"><div class="panel"><div class="panel-header"><div><p>SCHOOL NEWS</p><h2>Announcements</h2></div></div><div id="announcementList"></div></div></section>
 <section id="exams" class="tab-page"><div class="panel"><div class="panel-header"><div><p>EXAMINATION SCHEDULE</p><h2 id="examClassTitle"></h2></div></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Subject</th><th>Time</th><th>Room</th></tr></thead><tbody id="examRows"></tbody></table></div></div></section>
 <section id="profile" class="tab-page"><div class="profile-upload-page"><div class="panel profile-upload-card"><div class="profile-upload-heading"><p class="eyebrow">PROFILE</p><h2>Student Information</h2><p class="muted">This information comes directly from your school record.</p></div><div class="record-grid"><div><strong>Student ID</strong><span id="profileStudentId"></span></div><div><strong>Registration Date</strong><span id="studentRegistrationDate"></span></div><div><strong>Sex</strong><span id="studentSex"></span></div><div><strong>Enrollment Status</strong><span id="studentEnrollmentStatus"></span></div><div><strong>Class</strong><span id="profileClass"></span></div><div><strong>School Year</strong><span id="profileSchoolYear"></span></div><div><strong>Parent / Guardian</strong><span id="studentParent"></span></div><div><strong>Parent Phone</strong><span id="studentParentPhone"></span></div><div><strong>Sponsor / Class Teacher</strong><span id="studentSponsor"></span></div><div><strong>Scholarship</strong><span id="studentScholarship"></span></div><div><strong>Portal Status</strong><span id="profileStatus"></span></div></div><div id="studentIdCardPreview" class="id-card-preview"></div></div></div></section>
-</main></div><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="supabase-client.js"></script><script src="dashboard.js"></script></body></html>
+</main></div><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="supabase-client.js"></script><script src="dashboard.js"></script>
+<script>
+(function(){
+  const menu=document.getElementById("mobileMenu");
+  const sidebar=document.querySelector(".sidebar");
+  const overlay=document.getElementById("sidebarOverlay");
+  if(!menu||!sidebar||!overlay)return;
+  function close(){sidebar.classList.remove("mobile-open");overlay.classList.remove("show");menu.setAttribute("aria-expanded","false");}
+  function toggle(){const open=!sidebar.classList.contains("mobile-open");sidebar.classList.toggle("mobile-open",open);overlay.classList.toggle("show",open);menu.setAttribute("aria-expanded",String(open));}
+  menu.onclick=toggle;
+  overlay.onclick=close;
+  sidebar.querySelectorAll(".nav-button, #logout").forEach(btn=>btn.addEventListener("click",close));
+})();
+</script></body></html>

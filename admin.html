@@ -81,4 +81,17 @@
 </section>
 </main></div>
 <div id="modal" class="modal hidden"><div class="modal-card"><button class="modal-close" id="closeModal">×</button><h2 id="modalTitle"></h2><div id="modalBody"></div></div></div>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="supabase-client.js"></script><script src="admin.js"></script></body></html>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="supabase-client.js"></script><script src="admin.js"></script>
+<script>
+(function(){
+  const menu=document.getElementById("mobileMenu");
+  const sidebar=document.querySelector(".sidebar");
+  const overlay=document.getElementById("sidebarOverlay");
+  if(!menu||!sidebar||!overlay)return;
+  function close(){sidebar.classList.remove("mobile-open");overlay.classList.remove("show");menu.setAttribute("aria-expanded","false");}
+  function toggle(){const open=!sidebar.classList.contains("mobile-open");sidebar.classList.toggle("mobile-open",open);overlay.classList.toggle("show",open);menu.setAttribute("aria-expanded",String(open));}
+  menu.onclick=toggle;
+  overlay.onclick=close;
+  sidebar.querySelectorAll(".nav, #logout").forEach(btn=>btn.addEventListener("click",close));
+})();
+</script></body></html>

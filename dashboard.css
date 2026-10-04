@@ -54,3 +54,19 @@
   .app>.main::-webkit-scrollbar-track{background:transparent}
   .app>.main::-webkit-scrollbar-thumb{background:#8b8179;border-radius:8px;border:2px solid var(--cream)}
 }
+
+
+/* VFA UI: mobile independent navigation and main-content scrolling. */
+@media (max-width: 520px){
+  html, body{height:100%;overflow:hidden}
+  .app{height:100vh;min-height:100vh;overflow:hidden}
+  .app>.sidebar{height:100vh;min-height:0;overflow:hidden}
+  .app>.sidebar nav{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:auto;scrollbar-color:#8b8179 transparent}
+  .app>.sidebar nav::-webkit-scrollbar{width:10px}
+  .app>.sidebar nav::-webkit-scrollbar-track{background:transparent}
+  .app>.sidebar nav::-webkit-scrollbar-thumb{background:#8b8179;border-radius:8px;border:2px solid var(--brown-dark)}
+  .app>.main{height:100vh;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:auto;scrollbar-color:#8b8179 transparent}
+  .app>.main::-webkit-scrollbar{width:10px}
+  .app>.main::-webkit-scrollbar-track{background:transparent}
+  .app>.main::-webkit-scrollbar-thumb{background:#8b8179;border-radius:8px;border:2px solid var(--cream)}
+}
