@@ -1,4 +1,5 @@
 const $=id=>document.getElementById(id);const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]));
+let vfaStudentActiveTab="home";
 const periods=[{name:"1st Period",semester:"first",column:"first"},{name:"2nd Period",semester:"first",column:"second"},{name:"3rd Period",semester:"first",column:"third"},{name:"Exam",semester:"first",column:"exam"},{name:"4th Period",semester:"second",column:"fourth"},{name:"5th Period",semester:"second",column:"fifth"},{name:"6th Period",semester:"second",column:"sixth"},{name:"Exam",semester:"second",column:"second_exam"}];
 async function load(){
  try{await vfaSupabase.auth.refreshSession();}catch(err){console.warn("VFA student session refresh failed:",err);}
@@ -53,10 +54,10 @@ const avgs=(grades||[]).map(g=>Number(g.score)).filter(Number.isFinite);const av
      ? `<div class="id-card-label">Student ID Card</div><img src="${esc(student.id_card_data)}" alt="${esc(fresh.name)} student ID card">`
      : '<div class="id-card-empty">No ID card has been uploaded by the school.</div>';
  }
- document.querySelectorAll(".nav-button").forEach(b=>b.addEventListener("click",()=>openTab(b.dataset.tab)));openTab("home");
+ document.querySelectorAll(".nav-button").forEach(b=>b.addEventListener("click",()=>openTab(b.dataset.tab)));openTab(vfaStudentActiveTab);
 }
 const titles={home:"Home",grades:"Student's Grade",finance:"Financial Report",scale:"Scale Your Child",suggestions:"Admin Suggestions",assignments:"Assignments",announcements:"Announcements",exams:"Examination Timetable",profile:"Profile"};
-function openTab(id){document.querySelectorAll(".tab-page").forEach(p=>p.classList.remove("active"));$(id)?.classList.add("active");document.querySelectorAll(".nav-button").forEach(b=>b.classList.toggle("active",b.dataset.tab===id));if($("pageTitle"))$("pageTitle").textContent=titles[id]||id;window.scrollTo({top:0,behavior:"smooth"});}
+function openTab(id){vfaStudentActiveTab=id;document.querySelectorAll(".tab-page").forEach(p=>p.classList.remove("active"));$(id)?.classList.add("active");document.querySelectorAll(".nav-button").forEach(b=>b.classList.toggle("active",b.dataset.tab===id));if($("pageTitle"))$("pageTitle").textContent=titles[id]||id;window.scrollTo({top:0,behavior:"smooth"});}
 $("logout")?.addEventListener("click",async()=>{await vfaSupabase.auth.signOut();localStorage.removeItem("loggedInStudent");location.href="./"});
 let vfaStudentRealtimeChannel=null;
 let vfaStudentRealtimeTimer=null;
