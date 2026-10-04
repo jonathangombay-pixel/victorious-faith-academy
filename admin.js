@@ -256,31 +256,62 @@ function openStudentForm(id){
  <label class="full">ID Card Upload<div class="student-id-upload-box"><input id="studentIdCardUpload" name="idCard" type="file" accept="image/*"><small>Upload this student's ID card. The image will appear in the student's Profile tab.</small><div id="studentIdCardUploadPreview" class="student-id-upload-preview">${s?.idCard?`<img src="${esc(s.idCard)}" alt="Current student ID card"><button type="button" class="icon-btn danger" id="removeStudentIdCard">Remove ID Card</button>`:"<span class=\"muted\">No ID card saved yet.</span>"}</div></div></label>
  <div class="credential-box full"><strong>Portal Registration</strong><p>Registration Number: <code>${esc(s?.registration_number?formatRegistrationNumber(s.registration_number):"Assigned on save")}</code></p><p>Student ID: <code>${esc(s?.id||"Assigned automatically")}</code></p><p>Password: <code id="newStudentPassword">${esc(s?.password||"Will be generated automatically")}</code></p><small>The school's register numbers (001, 002, 003...) are permanent school-wide registration numbers. The portal Student ID combines the fixed prefix ${BASE_ID} with that three-digit registration number. Moving a student to another class does not change the ID, and deleted numbers are never recycled.</small></div>
  <div class="submit-row"><button class="primary" type="submit">${id?"Save Student":"Add Student"}</button></div></form>`);
- $("studentForm").onsubmit=e=>{
-   e.preventDefault();const f=new FormData(e.target);
-   const file=f.get("idCard");
-   const finish=()=>{pendingStudentIds.add(s?.dbId||s?.id||"pending");closeModal();fillSelect("studentClass",["All Classes",...classes],$("studentClass").value);renderAll();};
-   const applyCard=(target)=>{
-     if(file && file.size && file.type.startsWith("image/")){
-       const reader=new FileReader();
-       reader.onload=()=>{target.idCard=reader.result;finish();};
-       reader.readAsDataURL(file);
-     } else finish();
-   };
-   $("removeStudentIdCard")?.addEventListener("click",()=>{
-     if(s){s.idCard="";$("studentIdCardUpload").value="";$("studentIdCardUploadPreview").innerHTML='<span class="muted">ID card will be removed when you save this student.</span>';}
-   });
-   $("studentIdCardUpload")?.addEventListener("change",e=>{
-     const picked=e.target.files?.[0];
-     if(!picked||!picked.type.startsWith("image/"))return;
-     const reader=new FileReader();
-     reader.onload=()=>{$("studentIdCardUploadPreview").innerHTML=`<img src="${esc(reader.result)}" alt="Selected student ID card"><span class="muted">Selected. Save Student to store it in Supabase.</span>`;};
-     reader.readAsDataURL(picked);
-   });
-   if(id){Object.assign(s,{name:f.get("name").trim(),grade:f.get("grade"),registrationDate:f.get("registrationDate")||today(),sex:f.get("sex")||"",enrollmentStatus:f.get("enrollmentStatus")||"New",parent:f.get("parent").trim(),parentPhone:f.get("parentPhone").trim(),sponsor:f.get("sponsor").trim(),status:f.get("status"),schoolYear:f.get("schoolYear").trim(),scholarship:f.get("scholarship")==="on"});if(!s.registration_number)s.registration_number=registrationFromCode(s.id);applyCard(s);}
-   else{const ns={id:"",_localId:`new-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,registration_number:null,name:f.get("name").trim(),grade:f.get("grade"),registrationDate:f.get("registrationDate")||today(),sex:f.get("sex")||"",enrollmentStatus:f.get("enrollmentStatus")||"New",parent:f.get("parent").trim(),parentPhone:f.get("parentPhone").trim(),sponsor:f.get("sponsor").trim(),status:f.get("status"),schoolYear:f.get("schoolYear").trim(),scholarship:f.get("scholarship")==="on",password:makePassword(),idCard:""};students.push(ns);applyCard(ns);}
+ $("studentForm").onsubmit=async e=>{
+   e.preventDefault();
+   const f=new FormData(e.target);
+   const submitBtn=e.target.querySelector('button[type="submit"]');
+   if(submitBtn){submitBtn.disabled=true;submitBtn.textContent="Saving Student…";}
+   try{
+     await requireVerifiedAdminSession();
+     let target=s;
+     if(id){
+       Object.assign(target,{name:f.get("name").trim(),grade:f.get("grade"),registrationDate:f.get("registrationDate")||today(),sex:f.get("sex")||"",enrollmentStatus:f.get("enrollmentStatus")||"New",parent:f.get("parent").trim(),parentPhone:f.get("parentPhone").trim(),sponsor:f.get("sponsor").trim(),status:f.get("status"),schoolYear:f.get("schoolYear").trim(),scholarship:f.get("scholarship")==="on"});
+       if(!target.registration_number)target.registration_number=registrationFromCode(target.id);
+     }else{
+       target={id:"",_localId:`new-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,registration_number:null,name:f.get("name").trim(),grade:f.get("grade"),registrationDate:f.get("registrationDate")||today(),sex:f.get("sex")||"",enrollmentStatus:f.get("enrollmentStatus")||"New",parent:f.get("parent").trim(),parentPhone:f.get("parentPhone").trim(),sponsor:f.get("sponsor").trim(),status:f.get("status"),schoolYear:f.get("schoolYear").trim(),scholarship:f.get("scholarship")==="on",password:makePassword(),idCard:""};
+       students.push(target);
+     }
 
+     const file=f.get("idCard");
+     if(file && file.size && file.type.startsWith("image/")){
+       target.idCard=await new Promise((resolve,reject)=>{
+         const reader=new FileReader();
+         reader.onload=()=>resolve(reader.result);
+         reader.onerror=()=>reject(new Error("The ID card image could not be read."));
+         reader.readAsDataURL(file);
+       });
+     }
+
+     pendingStudentIds.add(target.dbId||target.id||target._localId);
+     await syncVfaStudents([target]);
+     await refreshRemoteContent();
+     pendingStudentIds.delete(target.dbId||target.id||target._localId);
+     closeModal();
+     fillSelect("studentClass",["All Classes",...classes],$("studentClass").value);
+     renderAll();
+     alert(id?"Student updated successfully and saved to the school database.":"Student added successfully and saved to the school database.");
+   }catch(err){
+     console.error("Student save failed:",err);
+     alert("The student could not be saved to the school database: "+err.message);
+   }finally{
+     if(submitBtn){submitBtn.disabled=false;submitBtn.textContent=id?"Save Student":"Add Student";}
+   }
  };
+ $("removeStudentIdCard")?.addEventListener("click",async()=>{
+   if(!s)return;
+   if(!confirm("Remove this student's saved ID card?"))return;
+   s.idCard="";
+   $("studentIdCardUpload").value="";
+   $("studentIdCardUploadPreview").innerHTML='<span class="muted">ID card will be removed when you save this student.</span>';
+ });
+ $("studentIdCardUpload")?.addEventListener("change",e=>{
+   const picked=e.target.files?.[0];
+   if(!picked||!picked.type.startsWith("image/"))return;
+   const reader=new FileReader();
+   reader.onload=()=>{$("studentIdCardUploadPreview").innerHTML=`<img src="${esc(reader.result)}" alt="Selected student ID card"><span class="muted">Selected. Click Save Student to store it in Supabase.</span>`;};
+   reader.readAsDataURL(picked);
+ });
+
 }
 window.deleteStudent=async id=>{
  const s=students.find(x=>x.id===id);if(!s)return;
@@ -673,8 +704,8 @@ function nextStudentCode(){
   const nums=students.map(s=>Number(String(s.id||"").match(/(\d{3})$/)?.[1]||0)).filter(Number.isFinite);
   const next=Math.max(0,...nums)+1; return `0020172${String(next).padStart(3,"0")}`;
 }
-async function syncVfaStudents(){
-  for(const s of students){
+async function syncVfaStudents(studentList=students){
+  for(const s of studentList){
     const cls=classRows.find(c=>c.name===s.grade), sponsor=staff.find(t=>t.name===s.sponsor);
     const payload={full_name:s.name,class_id:cls?.id||null,registration_date:s.registrationDate||null,sex:s.sex||null,enrollment_status:s.enrollmentStatus||null,sponsor_id:sponsor?.id||null,parent_name:s.parent||null,parent_phone:s.parentPhone||null,school_year:s.schoolYear||null,scholarship:Boolean(s.scholarship),is_active:s.status!=="Inactive",id_card_data:s.idCard||null};
     if(!s.dbId){
@@ -725,7 +756,7 @@ async function syncVfaGrades(){
 }
 
 // Replace legacy button handlers that depended on tables/RPCs not present in the new database.
-$("saveStudents").onclick=async()=>{try{await requireVerifiedAdminSession();if(!students.length)return alert("There are no students to save.");await syncVfaStudents();await refreshRemoteContent();renderAll();alert("Students saved successfully to the school database.");}catch(err){console.error(err);alert("The students could not be saved: "+err.message)}};
+$("saveStudents").onclick=async()=>{try{await requireVerifiedAdminSession();const pending=students.filter(x=>pendingStudentIds.has(x.dbId)||pendingStudentIds.has(x.id)||pendingStudentIds.has(x._localId));if(!pending.length){alert("There are no unsaved student changes. Use Save Student after editing a student.");return;}await syncVfaStudents(pending);pendingStudentIds.clear();await refreshRemoteContent();renderAll();alert(`${pending.length} student${pending.length===1?"":"s"} saved successfully to the school database.`);}catch(err){console.error(err);alert("The students could not be saved to the school database: "+err.message)}};
 window.deleteStudent=async id=>{const s=students.find(x=>x.id===id);if(!s||!confirm(`Delete ${s.name}? This removes the student record and portal login from Supabase.`))return;try{if(s.auth_user_id&&s.dbId){const {data:functionData,error:functionError}=await vfaSupabase.functions.invoke("bright-api",{body:{action:"delete",studentDbId:s.dbId,authUserId:s.auth_user_id}});if(functionError)throw new Error(functionError.message||"Student account deletion failed.");if(functionData?.error)throw new Error(functionData.error);}if(s.dbId){const {error}=await vfaSupabase.from("students").delete().eq("id",s.dbId);if(error)throw error;}students=students.filter(x=>x.id!==id);await refreshRemoteContent();renderAll();alert("Student deleted successfully from the school database.");}catch(err){alert("Could not delete student: "+err.message)}};
 
 $("saveAllGrades").onclick=async()=>{document.querySelectorAll(".grade-cell").forEach(i=>{const v=i.value.trim();if(v==="")delete gradesData[i.dataset.key];else gradesData[i.dataset.key]=Math.max(0,Math.min(100,Number(v)))});try{await syncVfaGrades();await refreshRemoteContent();renderGrades();alert("Grade sheet saved to the school database.");}catch(err){alert("Could not save grades: "+err.message)}};
