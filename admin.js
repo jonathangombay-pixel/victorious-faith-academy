@@ -253,7 +253,7 @@ function openStudentForm(id){
  <label>Portal Status<select name="status"><option ${s?.status!=="Inactive"?"selected":""}>Active</option><option ${s?.status==="Inactive"?"selected":""}>Inactive</option></select></label>
  <label>School Year<input name="schoolYear" value="${esc(s?.schoolYear||"2026/2027")}" required></label>
  <label class="full"><input name="scholarship" type="checkbox" ${s?.scholarship?"checked":""}> Scholarship Student — No tuition payment required</label>
- <label class="full">ID Card Upload<div class="student-id-upload-box"><input id="studentIdCardUpload" name="idCard" type="file" accept="image/*"><small>Upload this student's ID card. The image will appear in the student's Profile tab.</small><div id="studentIdCardUploadPreview" class="student-id-upload-preview"></div></div></label>
+ <label class="full">ID Card Upload<div class="student-id-upload-box"><input id="studentIdCardUpload" name="idCard" type="file" accept="image/*"><small>Upload this student's ID card. The image will appear in the student's Profile tab.</small><div id="studentIdCardUploadPreview" class="student-id-upload-preview">${s?.idCard?`<img src="${esc(s.idCard)}" alt="Current student ID card"><button type="button" class="icon-btn danger" id="removeStudentIdCard">Remove ID Card</button>`:"<span class=\"muted\">No ID card saved yet.</span>"}</div></div></label>
  <div class="credential-box full"><strong>Portal Registration</strong><p>Registration Number: <code>${esc(s?.registration_number?formatRegistrationNumber(s.registration_number):"Assigned on save")}</code></p><p>Student ID: <code>${esc(s?.id||"Assigned automatically")}</code></p><p>Password: <code id="newStudentPassword">${esc(s?.password||"Will be generated automatically")}</code></p><small>The school's register numbers (001, 002, 003...) are permanent school-wide registration numbers. The portal Student ID combines the fixed prefix ${BASE_ID} with that three-digit registration number. Moving a student to another class does not change the ID, and deleted numbers are never recycled.</small></div>
  <div class="submit-row"><button class="primary" type="submit">${id?"Save Student":"Add Student"}</button></div></form>`);
  $("studentForm").onsubmit=e=>{
@@ -261,9 +261,22 @@ function openStudentForm(id){
    const file=f.get("idCard");
    const finish=()=>{pendingStudentIds.add(s?.dbId||s?.id||"pending");closeModal();fillSelect("studentClass",["All Classes",...classes],$("studentClass").value);renderAll();};
    const applyCard=(target)=>{
-     if(file && file.size && file.type.startsWith("image/")){const reader=new FileReader();reader.onload=()=>{target.idCard=reader.result;finish();};reader.readAsDataURL(file);}
-     else finish();
+     if(file && file.size && file.type.startsWith("image/")){
+       const reader=new FileReader();
+       reader.onload=()=>{target.idCard=reader.result;finish();};
+       reader.readAsDataURL(file);
+     } else finish();
    };
+   $("removeStudentIdCard")?.addEventListener("click",()=>{
+     if(s){s.idCard="";$("studentIdCardUpload").value="";$("studentIdCardUploadPreview").innerHTML='<span class="muted">ID card will be removed when you save this student.</span>';}
+   });
+   $("studentIdCardUpload")?.addEventListener("change",e=>{
+     const picked=e.target.files?.[0];
+     if(!picked||!picked.type.startsWith("image/"))return;
+     const reader=new FileReader();
+     reader.onload=()=>{$("studentIdCardUploadPreview").innerHTML=`<img src="${esc(reader.result)}" alt="Selected student ID card"><span class="muted">Selected. Save Student to store it in Supabase.</span>`;};
+     reader.readAsDataURL(picked);
+   });
    if(id){Object.assign(s,{name:f.get("name").trim(),grade:f.get("grade"),registrationDate:f.get("registrationDate")||today(),sex:f.get("sex")||"",enrollmentStatus:f.get("enrollmentStatus")||"New",parent:f.get("parent").trim(),parentPhone:f.get("parentPhone").trim(),sponsor:f.get("sponsor").trim(),status:f.get("status"),schoolYear:f.get("schoolYear").trim(),scholarship:f.get("scholarship")==="on"});if(!s.registration_number)s.registration_number=registrationFromCode(s.id);applyCard(s);}
    else{const ns={id:"",_localId:`new-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,registration_number:null,name:f.get("name").trim(),grade:f.get("grade"),registrationDate:f.get("registrationDate")||today(),sex:f.get("sex")||"",enrollmentStatus:f.get("enrollmentStatus")||"New",parent:f.get("parent").trim(),parentPhone:f.get("parentPhone").trim(),sponsor:f.get("sponsor").trim(),status:f.get("status"),schoolYear:f.get("schoolYear").trim(),scholarship:f.get("scholarship")==="on",password:makePassword(),idCard:""};students.push(ns);applyCard(ns);}
 
@@ -644,10 +657,10 @@ async function loadVfaRemote(){
   classRows=(classesDb||[]).sort((a,b)=>(classOrder[a.name]||999)-(classOrder[b.name]||999));
   const {data:staffDb,error:se}=await vfaSupabase.from("staff").select("id,name,position,phone,email,is_active").eq("is_active",true).order("name");
   if(se)throw new Error(`staff: ${se.message}`); staff=(staffDb||[]).map(x=>({dbId:x.id,id:x.id,name:x.name,position:x.position||"",phone:x.phone||"",email:x.email||""}));
-  const {data:studentsDb,error:ste}=await vfaSupabase.from("students").select("id,full_name,student_code,registration_date,sex,enrollment_status,class_id,sponsor_id,parent_name,parent_phone,school_year,scholarship,auth_user_id,is_active,created_at,updated_at").order("full_name");
+  const {data:studentsDb,error:ste}=await vfaSupabase.from("students").select("id,full_name,student_code,registration_date,sex,enrollment_status,class_id,sponsor_id,parent_name,parent_phone,school_year,scholarship,auth_user_id,is_active,created_at,updated_at,id_card_data").order("full_name");
   if(ste)throw new Error(`students: ${ste.message}`);
   const classById=Object.fromEntries(classRows.map(x=>[x.id,x.name]));
-  students=(studentsDb||[]).map(x=>({dbId:x.id,id:x.student_code||"",name:x.full_name,grade:classById[x.class_id]||"",registrationDate:x.registration_date||"",sex:x.sex||"",enrollmentStatus:x.enrollment_status||"",parent:x.parent_name||"",parentPhone:x.parent_phone||"",sponsor:(staff.find(t=>t.id===x.sponsor_id)||{}).name||"",sponsorId:x.sponsor_id||"",status:x.is_active?"Active":"Inactive",schoolYear:x.school_year||"",password:getStudentPassword(x.student_code||""),auth_user_id:x.auth_user_id,scholarship:Boolean(x.scholarship)}));
+  students=(studentsDb||[]).map(x=>({dbId:x.id,id:x.student_code||"",name:x.full_name,grade:classById[x.class_id]||"",registrationDate:x.registration_date||"",sex:x.sex||"",enrollmentStatus:x.enrollment_status||"",parent:x.parent_name||"",parentPhone:x.parent_phone||"",sponsor:(staff.find(t=>t.id===x.sponsor_id)||{}).name||"",sponsorId:x.sponsor_id||"",status:x.is_active?"Active":"Inactive",schoolYear:x.school_year||"",password:getStudentPassword(x.student_code||""),auth_user_id:x.auth_user_id,scholarship:Boolean(x.scholarship),idCard:x.id_card_data||""}));
   await loadServerStudentPasswords();
   students.forEach(s=>{if(!s.password){const saved=getStudentPassword(s.id);if(saved)s.password=saved;}});
   const {data:subs,error:sube}=await vfaSupabase.from("subjects").select("id,name").order("name");
@@ -663,7 +676,7 @@ function nextStudentCode(){
 async function syncVfaStudents(){
   for(const s of students){
     const cls=classRows.find(c=>c.name===s.grade), sponsor=staff.find(t=>t.name===s.sponsor);
-    const payload={full_name:s.name,class_id:cls?.id||null,registration_date:s.registrationDate||null,sex:s.sex||null,enrollment_status:s.enrollmentStatus||null,sponsor_id:sponsor?.id||null,parent_name:s.parent||null,parent_phone:s.parentPhone||null,school_year:s.schoolYear||null,scholarship:Boolean(s.scholarship),is_active:s.status!=="Inactive"};
+    const payload={full_name:s.name,class_id:cls?.id||null,registration_date:s.registrationDate||null,sex:s.sex||null,enrollment_status:s.enrollmentStatus||null,sponsor_id:sponsor?.id||null,parent_name:s.parent||null,parent_phone:s.parentPhone||null,school_year:s.schoolYear||null,scholarship:Boolean(s.scholarship),is_active:s.status!=="Inactive",id_card_data:s.idCard||null};
     if(!s.dbId){
       // New students receive one password when first saved. Keep that password.
       if(!s.password)s.password=makePassword();

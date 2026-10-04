@@ -158,3 +158,59 @@ button:disabled { cursor: wait; opacity: .78; }
 @keyframes vfaSpin { to { transform:rotate(360deg); } }
 @keyframes vfaPop { from { transform:scale(.65); opacity:0; } to { transform:scale(1); opacity:1; } }
 @media (prefers-reduced-motion: reduce) { button { transition:none; } .vfa-button-spinner { animation:none; } .vfa-button-check,.vfa-button-error { animation:none; } }
+
+
+/* VFA UI: mobile independent navigation and main-content scrolling. */
+@media (max-width: 520px){
+  html, body{height:100%;overflow:hidden}
+  .admin-app{height:100vh;min-height:100vh;overflow:hidden}
+  .admin-app>.sidebar{height:100vh;min-height:0;overflow:hidden}
+  .admin-app>.sidebar nav{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:auto;scrollbar-color:#8b8179 transparent}
+  .admin-app>.sidebar nav::-webkit-scrollbar{width:10px}
+  .admin-app>.sidebar nav::-webkit-scrollbar-track{background:transparent}
+  .admin-app>.sidebar nav::-webkit-scrollbar-thumb{background:#8b8179;border-radius:8px;border:2px solid var(--brown-dark)}
+  .admin-app>.main{height:100vh;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:auto;scrollbar-color:#8b8179 transparent}
+  .admin-app>.main::-webkit-scrollbar{width:10px}
+  .admin-app>.main::-webkit-scrollbar-track{background:transparent}
+  .admin-app>.main::-webkit-scrollbar-thumb{background:#8b8179;border-radius:8px;border:2px solid var(--cream)}
+}
+
+
+/* VFA UI: keep the whole mobile sidebar scrollable so Logout is part of the same scroll. */
+@media(max-width:520px){
+  .admin-app>.sidebar{overflow-y:auto;overflow-x:hidden}
+  .admin-app>.sidebar nav{overflow:visible;flex:none}
+  .admin-app>.logout{flex-shrink:0}
+}
+
+
+/* VFA MOBILE: sidebar must scroll as one continuous area, including Logout. */
+@media (max-width:520px){
+  .admin-app>.sidebar{
+    height:100dvh;
+    max-height:100dvh;
+    min-height:0;
+    overflow-y:scroll !important;
+    overflow-x:hidden !important;
+    -webkit-overflow-scrolling:touch;
+    overscroll-behavior:contain;
+    scrollbar-width:auto;
+    scrollbar-color:#8b8179 transparent;
+    padding-bottom:96px;
+    box-sizing:border-box;
+    touch-action:pan-y;
+  }
+  .admin-app>.sidebar nav{
+    overflow:visible !important;
+    flex:none !important;
+    min-height:auto;
+    touch-action:pan-y;
+  }
+  .admin-app>.sidebar .logout{
+    flex:none;
+    margin-bottom:24px;
+  }
+  .admin-app>.sidebar::-webkit-scrollbar{width:10px}
+  .admin-app>.sidebar::-webkit-scrollbar-track{background:transparent}
+  .admin-app>.sidebar::-webkit-scrollbar-thumb{background:#8b8179;border-radius:8px;border:2px solid var(--brown-dark)}
+}

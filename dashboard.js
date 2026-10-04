@@ -3,7 +3,7 @@ const periods=[{name:"1st Period",semester:"first",column:"first"},{name:"2nd Pe
 async function load(){
  try{await vfaSupabase.auth.refreshSession();}catch(err){console.warn("VFA student session refresh failed:",err);}
  const {data:{user},error:ue}=await vfaSupabase.auth.getUser();if(ue||!user){location.href="./";return;}
- const {data:student,error:se}=await vfaSupabase.from("students").select("id,student_code,full_name,class_id,sponsor_id,parent_name,parent_phone,school_year,registration_date,sex,enrollment_status,scholarship,is_active").eq("auth_user_id",user.id).maybeSingle();if(se||!student||!student.is_active){await vfaSupabase.auth.signOut();location.href="./";return;}
+ const {data:student,error:se}=await vfaSupabase.from("students").select("id,student_code,full_name,class_id,sponsor_id,parent_name,parent_phone,school_year,registration_date,sex,enrollment_status,scholarship,is_active,id_card_data").eq("auth_user_id",user.id).maybeSingle();if(se||!student||!student.is_active){await vfaSupabase.auth.signOut();location.href="./";return;}
  const [{data:cls},{data:sponsor},{data:subjects},{data:grades},{data:finance},{data:feeStructure},{data:exams},{data:assignmentsClass},{data:assignmentsAll},{data:announcementsClass},{data:announcementsAll},{data:suggestions},{data:scaleSettings,error:scaleSettingsError}]=await Promise.all([
   vfaSupabase.from("classes").select("id,name").eq("id",student.class_id).maybeSingle(),
   vfaSupabase.from("staff").select("id,name,position").eq("id",student.sponsor_id).maybeSingle(),
@@ -47,6 +47,12 @@ const avgs=(grades||[]).map(g=>Number(g.score)).filter(Number.isFinite);const av
  if($("studentParentPhone"))$("studentParentPhone").textContent=fresh.parentPhone||"—";
  if($("studentSponsor"))$("studentSponsor").textContent=fresh.sponsor||"—";
  if($("studentScholarship"))$("studentScholarship").textContent=fresh.scholarship?"Yes — No tuition required":"No";
+ const idCardPreview=$("studentIdCardPreview");
+ if(idCardPreview){
+   idCardPreview.innerHTML=student.id_card_data
+     ? `<div class="id-card-label">Student ID Card</div><img src="${esc(student.id_card_data)}" alt="${esc(fresh.name)} student ID card">`
+     : '<div class="id-card-empty">No ID card has been uploaded by the school.</div>';
+ }
  document.querySelectorAll(".nav-button").forEach(b=>b.addEventListener("click",()=>openTab(b.dataset.tab)));openTab("home");
 }
 const titles={home:"Home",grades:"Student's Grade",finance:"Financial Report",scale:"Scale Your Child",suggestions:"Admin Suggestions",assignments:"Assignments",announcements:"Announcements",exams:"Examination Timetable",profile:"Profile"};
