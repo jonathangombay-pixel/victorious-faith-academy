@@ -42,12 +42,25 @@ function getVfaAdminSessionKey(){
   }
   return key;
 }
+let vfaAdminLockHeartbeat=null;
+let vfaAdminLockHeld=false;
 async function acquireVfaAdminSessionLock(){
   const {data,error}=await vfaSupabase.rpc("vfa_acquire_admin_session",{p_session_key:getVfaAdminSessionKey()});
   if(error)throw new Error(error.message||"This VFA administrator account is already signed in on another device. Please log out there before signing in here.");
   if(data?.ok!==true)throw new Error("This VFA administrator account is already signed in on another device. Please log out there before signing in here.");
+  vfaAdminLockHeld=true;
+  if(vfaAdminLockHeartbeat)clearInterval(vfaAdminLockHeartbeat);
+  vfaAdminLockHeartbeat=setInterval(async()=>{
+    if(!vfaAdminLockHeld||!currentAdmin)return;
+    try{
+      const {data:renewed,error:renewError}=await vfaSupabase.rpc("vfa_renew_admin_session",{p_session_key:getVfaAdminSessionKey()});
+      if(renewError||renewed?.ok!==true)console.warn("VFA admin session lock renewal failed:",renewError||renewed);
+    }catch(err){console.warn("VFA admin session lock renewal failed:",err);}
+  },15000);
 }
 async function releaseVfaAdminSessionLock(){
+  vfaAdminLockHeld=false;
+  if(vfaAdminLockHeartbeat){clearInterval(vfaAdminLockHeartbeat);vfaAdminLockHeartbeat=null;}
   try{await vfaSupabase.rpc("vfa_release_admin_session",{p_session_key:getVfaAdminSessionKey()});}catch(err){console.warn("VFA admin session lock release failed:",err);}
 }
 const $=id=>document.getElementById(id);
@@ -621,7 +634,7 @@ function setupAdminRealtime(){
   // blocked or Supabase Realtime temporarily drops a notification.
   vfaAdminRealtimePoll=setInterval(()=>refreshAdminRealtimeView(),5000);
 }
-async function showVerifiedAdminPanel(){const verified=await getVerifiedAdminSession();if(!verified)return false;await acquireVfaAdminSessionLock();await loadVfaRemote();$("loginView").classList.add("hidden");$("adminApp").classList.remove("hidden");$("staffPill").textContent=`${currentAdmin.name} • ${currentAdmin.role}`;init();setupAdminRealtime();return true;}
+async function showVerifiedAdminPanel(){const verified=await getVerifiedAdminSession();if(!verified)return false;await acquireVfaAdminSessionLock();try{await loadVfaRemote();$("loginView").classList.add("hidden");$("adminApp").classList.remove("hidden");$("staffPill").textContent=`${currentAdmin.name} • ${currentAdmin.role}`;init();setupAdminRealtime();return true;}catch(err){await releaseVfaAdminSessionLock();throw err;}}
 
 async function refreshRemoteContent(){
   const classMap=Object.fromEntries(classRows.map(x=>[x.id,x.name]));
